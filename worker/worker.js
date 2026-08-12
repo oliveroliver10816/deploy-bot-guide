@@ -22,12 +22,23 @@ import * as GH from "./lib/github.js";
 import * as HK from "./lib/heroku.js";
 import { toBase64, nowIso, humanSize, safeJoin, parentDir } from "./lib/util.js";
 
-const MAX_TARBALL = 60 * 1024 * 1024; // Worker memory guard for the repo archive
+// Worker memory guard. A 20 MB upload also costs ~27 MB as base64 while committing,
+// so the archive ceiling is kept well under the 128 MB isolate limit.
+const MAX_TARBALL = 40 * 1024 * 1024;
 const MAX_UPLOAD = 20 * 1024 * 1024;  // Telegram bot-download hard cap
 
 // ---------------------------------------------------------------- db helpers
 
 const q = (env, sql, ...args) => env.DB.prepare(sql).bind(...args);
+
+/**
+ * Every upload gets a short id that is stamped into its buttons. State is one
+ * slot per user, so without this a VA who sends a second file while the first
+ * file's buttons are still on screen could tap the OLD buttons and deploy the
+ * NEW file to the old path. Codes below are the ones that carry it.
+ */
+const FLOW_CODES = new Set(["r", "d", "u", "h", "k", "g"]);
+const newSid = () => Math.random().toString(36).slice(2, 6);
 
 // Runs once per isolate, not once per update: eight CREATE TABLE round-trips on
 // every keystroke would dominate the response time. Keyed to the binding rather
@@ -136,11 +147,12 @@ async function renderBrowse(env, token, chatId, msgId, user, st) {
   const dir = st.data.dir || "";
   const listing = await GH.listDir(repo.token, repo.owner, repo.name, repo.branch, dir, fetch);
 
+  const sid = st.data.sid || "";
   const opts = listing.dirs;
-  const buttons = opts.map((d, i) => ({ text: `📁 ${d}`, data: `d:${i}` }));
+  const buttons = opts.map((d, i) => ({ text: `📁 ${d}`, data: `d:${i}:${sid}` }));
 
   const nav = [];
-  if (dir) nav.push({ text: "⬆️ Up", data: "u" }, { text: "🏠 Top", data: "h" });
+  if (dir) nav.push({ text: "⬆️ Up", data: `u::${sid}` }, { text: "🏠 Top", data: `h::${sid}` });
 
   const clash = listing.files.find((f) => f.name === st.data.file.name);
   const here = `📍 <code>/${esc(dir)}</code>`;
@@ -153,7 +165,7 @@ async function renderBrowse(env, token, chatId, msgId, user, st) {
 
   const rows = keyboard(buttons, 2).reply_markup.inline_keyboard;
   if (nav.length) rows.push(nav.map((b) => ({ text: b.text, callback_data: b.data })));
-  rows.push([{ text: "✅ Put it here", callback_data: "k" }]);
+  rows.push([{ text: "✅ Put it here", callback_data: `k::${sid}` }]);
   rows.push([{ text: "✖️ Cancel", callback_data: "x" }]);
 
   st.data.opts = opts;
@@ -435,7 +447,10 @@ async function onMessage(env, token, msg) {
         : "No sites are set up yet — ask the owner.", {}, fetch);
     }
 
-    const data = { file: { id: doc.file_id, name: doc.file_name || "file", size: doc.file_size } };
+    const data = {
+      sid: newSid(),
+      file: { id: doc.file_id, name: doc.file_name || "file", size: doc.file_size },
+    };
 
     if (repos.length === 1) {
       const lp = await q(env, `SELECT dir FROM last_paths WHERE telegram_id=? AND repo_id=?`, user.telegram_id, repos[0].id).first();
@@ -449,7 +464,7 @@ async function onMessage(env, token, msg) {
     await setState(env, user.telegram_id, "pick_repo", data);
     return send(token, chatId,
       `<b>${esc(data.file.name)}</b> · ${humanSize(doc.file_size)}\n\nWhich site is this for?`,
-      keyboard(repos.map((r, i) => ({ text: r.label, data: `r:${i}` })), 1), fetch);
+      keyboard(repos.map((r, i) => ({ text: r.label, data: `r:${i}:${data.sid}` })), 1), fetch);
   }
 
   if (msg.photo) {
@@ -469,12 +484,18 @@ async function onCallback(env, token, cb) {
   const chatId = cb.message.chat.id;
   const msgId = cb.message.message_id;
   const st = await getState(env, user.telegram_id);
-  const [code, rawIdx] = String(cb.data || "").split(":");
+  const [code, rawIdx, sid] = String(cb.data || "").split(":");
   const idx = Number(rawIdx);
   const opts = st.data.opts || [];
   const isOwner = user.role === "owner";
 
   await answerCb(token, cb.id, "", fetch);
+
+  // Buttons from a superseded upload must not act on the current one.
+  if (FLOW_CODES.has(code) && sid !== (st.data.sid || "")) {
+    return edit(token, chatId, msgId,
+      "⚠️ These buttons are from an earlier upload, so I ignored them.\n\nSend the file again and use the newest message.", {}, fetch);
+  }
 
   try {
     switch (code) {
@@ -512,7 +533,7 @@ async function onCallback(env, token, cb) {
           `${existing ? "🔁 Replaces the file already there" : "🆕 New file"}\n` +
           (app ? `Deploys: <b>${esc(app.label)}</b>` : `⚠️ No Heroku app linked — I will commit only`);
         return edit(token, chatId, msgId, text,
-          keyboard([{ text: "🚀 Deploy", data: "g" }, { text: "✖️ Cancel", data: "x" }], 2), fetch);
+          keyboard([{ text: "🚀 Deploy", data: `g::${st.data.sid || ""}` }, { text: "✖️ Cancel", data: "x" }], 2), fetch);
       }
 
       case "g":
