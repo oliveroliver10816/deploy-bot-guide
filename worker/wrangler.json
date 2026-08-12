@@ -1,0 +1,22 @@
+{
+  "name": "deploy-bot",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-01",
+  "account_id": "431aaf5f919ea44e107f6d7a91f5f362",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "deploy_bot",
+      "database_id": "3882a8d0-eff9-4dea-9d18-1deac3f5c1ca"
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "OWNER_ID": "558755209"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "deploy-bot",
+  "private": true,
+  "type": "module"
+}

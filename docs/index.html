@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Deploy Bot — push a file from Telegram, the site updates itself</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --line:#30363d;
+    --ink:#f0f6fc; --ink2:#c9d1d9; --dim:#8b949e;
+    --accent:#58a6ff; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:18px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:32px 20px 96px}
+  header{padding:40px 0 28px;border-bottom:1px solid var(--line);margin-bottom:36px}
+  h1{font-size:clamp(28px,5vw,42px);line-height:1.15;margin:0 0 12px;letter-spacing:-.02em}
+  .sub{color:var(--ink2);font-size:19px;margin:0}
+  .pill{display:inline-block;font:600 13px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+        color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:7px 13px;margin-bottom:18px}
+  h2{font-size:26px;margin:52px 0 8px;letter-spacing:-.01em;scroll-margin-top:20px}
+  h2 .n{color:var(--dim);font:600 18px/1 var(--mono);margin-right:10px}
+  h3{font-size:20px;margin:32px 0 8px}
+  p{margin:0 0 16px;color:var(--ink2)}
+  a{color:var(--accent)}
+  code{font-family:var(--mono);font-size:.88em;background:var(--panel2);border:1px solid var(--line);
+       border-radius:5px;padding:2px 6px;color:var(--ink)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;margin:0 0 18px}
+  pre code{background:none;border:0;padding:0;font-size:15px;line-height:1.6}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin:0 0 18px}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  ol.steps>li{counter-increment:s;position:relative;padding:0 0 22px 56px;margin:0}
+  ol.steps>li::before{
+    content:counter(s);position:absolute;left:0;top:-2px;width:38px;height:38px;border-radius:10px;
+    background:var(--accent);color:#08121f;font:700 19px/38px var(--mono);text-align:center;
+  }
+  ol.steps>li::after{content:"";position:absolute;left:18.5px;top:40px;bottom:0;width:1px;background:var(--line)}
+  ol.steps>li:last-child{padding-bottom:0}
+  ol.steps>li:last-child::after{display:none}
+  ol.steps b{color:var(--ink);display:block;font-size:19px;margin-bottom:4px}
+  .note{border-left:4px solid var(--warn);background:rgba(210,153,34,.08);
+        border-radius:0 8px 8px 0;padding:14px 18px;margin:0 0 18px}
+  .note.good{border-color:var(--good);background:rgba(63,185,80,.08)}
+  .note.bad{border-color:var(--bad);background:rgba(248,81,73,.08)}
+  .note p:last-child{margin-bottom:0}
+  .note b{color:var(--ink)}
+  table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:17px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font:600 13px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+  td:first-child{white-space:nowrap;width:1%}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .btn{display:inline-block;font-weight:600;background:var(--panel2);border:1px solid var(--line);
+       border-radius:8px;padding:6px 12px;color:var(--ink);font-size:16px;white-space:nowrap}
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 18px}
+  .flow span{color:var(--dim);font-size:20px}
+  footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);color:var(--dim);font-size:16px}
+  @media (max-width:600px){ body{font-size:17px} .wrap{padding:20px 16px 72px} ol.steps>li{padding-left:50px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="pill">Internal · do not share</div>
+  <h1>Deploy Bot</h1>
+  <p class="sub">Send a file to a Telegram bot. Pick which site it belongs to. The bot commits it to the right repo and deploys the right Heroku app, then tells you when it is live.</p>
+</header>
+
+<div class="flow">
+  <span class="btn">📎 Send file</span><span>→</span>
+  <span class="btn">Tap the site</span><span>→</span>
+  <span class="btn">Tap the folder</span><span>→</span>
+  <span class="btn">🚀 Deploy</span><span>→</span>
+  <span class="btn" style="border-color:var(--good);color:var(--good)">✅ Live</span>
+</div>
+
+<h2><span class="n">1</span>For the VA — how to update a site</h2>
+
+<p>You only ever need the Telegram app. You never touch GitHub, Heroku, or a terminal.</p>
+
+<ol class="steps">
+  <li>
+    <b>Send the file to the bot</b>
+    Tap the paperclip 📎, choose <b>File</b>, and pick the file from your phone or computer.
+    <div class="note"><p><b>Send it as “File”, not as a photo.</b> If you send an image the normal way, Telegram squashes it and renames it to something like <code>photo_2026.jpg</code>. The bot will tell you off and ask you to send it again properly.</p></div>
+  </li>
+  <li>
+    <b>Tap which site it is for</b>
+    The bot shows a button for each site. If there is only one site set up, it skips this step.
+  </li>
+  <li>
+    <b>Tap the folder it goes in</b>
+    You will see the folders inside that site. Tap a folder to open it, <span class="btn">⬆️ Up</span> to go back, then <span class="btn">✅ Put it here</span> when you are in the right place.
+    <div class="note good"><p>The bot remembers where you put things last time for each site, so usually it opens in the right folder already and you can go straight to <b>Put it here</b>.</p></div>
+  </li>
+  <li>
+    <b>Check the summary, then tap Deploy</b>
+    The bot shows you exactly what will happen — the file name, the site, the full path, whether it <b>replaces</b> a file that is already there or adds a <b>new</b> one, and which app will be updated. If it looks right, tap <span class="btn">🚀 Deploy</span>.
+  </li>
+  <li>
+    <b>Wait for the green tick</b>
+    The message updates itself as it goes: <i>Committing…</i> → <i>Building…</i> → <b style="color:var(--good)">✅ Live</b>. A build usually takes one to three minutes. You do not need to keep the chat open.
+  </li>
+</ol>
+
+<h3>If you made a mistake</h3>
+<p>Send <code>/undo</code>. The bot lists the last five changes; tap the one you want reversed. It puts the old version of the file back exactly as it was and redeploys. If the file was brand new, undo removes it.</p>
+
+<div class="note bad"><p><b>If you see “Build failed”</b> — the file <i>was</i> saved to the repo, but the app did <i>not</i> update, so the live site is still showing the old version. The bot prints the last lines of the error. Send <code>/undo</code> to put it back, and tell Bob.</p></div>
+
+<h3>Every command the VA needs</h3>
+<div class="scroll">
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>/undo</code></td><td>Reverse one of the last five changes and redeploy</td></tr>
+  <tr><td><code>/status</code></td><td>List the sites you can update and which app each one deploys</td></tr>
+  <tr><td><code>/cancel</code></td><td>Abandon what you were in the middle of</td></tr>
+  <tr><td><code>/help</code></td><td>The short version of this page, inside Telegram</td></tr>
+</table>
+</div>
+
+<h2><span class="n">2</span>First-time setup — owner only</h2>
+
+<p>The Worker is already deployed and waiting. What is left is creating the bot and telling it about your accounts. Roughly ten minutes, once.</p>
+
+<ol class="steps">
+  <li>
+    <b>Create the bot</b>
+    In Telegram, message <a href="https://t.me/BotFather">@BotFather</a> → <code>/newbot</code> → give it a name and a username. He replies with a token that looks like <code>8123456789:AAH…</code>.
+    <div class="note"><p>This must be a <b>brand-new bot</b>, not the existing Claude bridge bot. That one runs shell commands on the server as root — the VA must never be able to message it.</p></div>
+  </li>
+  <li>
+    <b>Hand the token over</b>
+    Send it to Claude, or run it yourself on the server:
+    <pre><code>/root/workspace/deploy-bot/setup.sh 8123456789:AAH…</code></pre>
+    That stores the token as an encrypted Worker secret and points Telegram at the Worker.
+  </li>
+  <li>
+    <b>Say /start to your new bot</b>
+    You are recognised as the owner automatically, because your Telegram ID is already baked in.
+  </li>
+  <li>
+    <b>Connect GitHub</b>
+    Send <code>/connect</code> → tap <b>GitHub</b> → paste a token. The bot deletes your message the moment it reads it, so the token is not left sitting in the chat.
+    <div class="note"><p>Make the token at <a href="https://github.com/settings/tokens">github.com/settings/tokens</a> → <b>Fine-grained token</b> → select the two repos → <b>Repository permissions → Contents: Read and write</b>. Nothing else is needed.</p></div>
+  </li>
+  <li>
+    <b>Connect Heroku</b>
+    Send <code>/connect</code> → tap <b>Heroku</b> → paste an API key from <a href="https://dashboard.heroku.com/account">dashboard.heroku.com/account</a> (Applications → Authorizations → Create), or run <code>heroku authorizations:create</code>.
+  </li>
+  <li>
+    <b>Register the repos</b>
+    Send <code>/addrepo</code>. The bot lists every repo that token can push to — tap one. Repeat for the second.
+  </li>
+  <li>
+    <b>Link the apps</b>
+    Send <code>/addapp</code>. The bot lists your Heroku apps — tap one, then tap the repo that deploys to it. Repeat for the second.
+  </li>
+  <li>
+    <b>Add your VA</b>
+    Send <code>/adduser</code>, then their Telegram ID number. They can get it by messaging the bot once — it tells them their ID even though it refuses them. Then they send <code>/start</code> and they are in.
+  </li>
+</ol>
+
+<h2><span class="n">3</span>Adding a new repo or a new Heroku app later</h2>
+
+<p>This is the part that keeps working forever. Nothing needs rebuilding and nobody needs to touch code.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>What you are adding</th><th>What to do</th></tr>
+  <tr><td><b>A new repo</b><br>on an account already connected</td><td><code>/addrepo</code> → tap the account → tap the repo. Done.</td></tr>
+  <tr><td><b>A new Heroku app</b><br>on an account already connected</td><td><code>/addapp</code> → tap the account → tap the app → tap the repo it deploys from. Done.</td></tr>
+  <tr><td><b>A whole new GitHub account</b></td><td><code>/connect</code> → GitHub → paste that account's token. Then <code>/addrepo</code> as above. Both accounts work side by side.</td></tr>
+  <tr><td><b>A whole new Heroku account</b></td><td><code>/connect</code> → Heroku → paste that account's key. Then <code>/addapp</code> as above.</td></tr>
+  <tr><td><b>Another person</b></td><td><code>/adduser</code> → their Telegram ID.</td></tr>
+  <tr><td><b>Removing a person</b></td><td><code>/deluser</code> → tap them.</td></tr>
+</table>
+</div>
+
+<div class="note"><p><b>One app per repo.</b> Linking a second app to a repo that already has one moves the link rather than creating two — so a single file push can never fan out into two deploys by accident.</p></div>
+
+<h2><span class="n">4</span>How it actually works</h2>
+
+<p>Worth knowing when something looks wrong.</p>
+
+<div class="card">
+  <p><b>The file goes in with one API call.</b> The bot does not clone anything. It reads the file's current version marker from GitHub, then writes the new bytes back with that marker attached. If somebody else changed the same file in the meantime, GitHub rejects it and the bot tells you to send it again — it will not silently overwrite their work.</p>
+  <p><b>The deploy does not rely on Heroku's GitHub integration.</b> The bot downloads the repo as an archive, uploads it to Heroku itself, and starts a build from that. This is why it works on private repos, and why it works even though the apps were never connected to GitHub in the Heroku dashboard.</p>
+  <p><b>The build is watched separately.</b> A timer checks in-flight builds every minute and edits the original chat message with the result, so the answer arrives even if you closed Telegram. Anything still building after 30 minutes is reported as stuck rather than left hanging.</p>
+  <p style="margin-bottom:0"><b>Undo is exact, not approximate.</b> Every deploy records a pointer to the previous contents of that file before overwriting it, so undo restores those precise bytes rather than guessing from history.</p>
+</div>
+
+<div class="note"><p><b>If an app already auto-deploys from GitHub</b>, the bot warns you when you link it and tells you to switch that off in the Heroku dashboard. Otherwise every change builds twice, and the two builds race.</p></div>
+
+<h3>Limits worth knowing</h3>
+<div class="scroll">
+<table>
+  <tr><th>Limit</th><th>Why</th></tr>
+  <tr><td>20 MB per file</td><td>Telegram's cap on what a bot is allowed to download. The bot says so plainly rather than failing oddly.</td></tr>
+  <tr><td>One file at a time</td><td>What was asked for. Send several one after another; each is its own deploy.</td></tr>
+  <tr><td>60 MB per repo</td><td>The whole repo is packed up and sent to Heroku on each deploy. Well beyond a normal site.</td></tr>
+  <tr><td>Only known people</td><td>Anyone not added is refused and told their ID, so you can add them if you want to.</td></tr>
+</table>
+</div>
+
+<footer>
+  <p>Worker: <code>deploy-bot.fleet-fefsba.workers.dev</code> · Cloudflare Workers + D1 · repo <code>/root/workspace/deploy-bot</code></p>
+  <p>Unlisted page. Do not share the link outside the team.</p>
+</footer>
+
+</div>
+</body>
+</html>

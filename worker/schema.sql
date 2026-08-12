@@ -1,0 +1,92 @@
+-- deploy-bot schema
+--
+-- Design notes that matter:
+--  * Credentials live in `connections`, one row per ACCOUNT (a GitHub account, a Heroku
+--    account). Adding a second GitHub account or a second Heroku account later is one
+--    more row, not a code change. That is what makes "connect a new git / new heroku"
+--    a two-minute job forever.
+--  * `repos` and `apps` each point at the connection that can reach them, so a repo on
+--    account A and a repo on account B coexist without ambiguity.
+--  * `deploys` keeps prev_blob_sha so /undo can restore the exact previous bytes without
+--    needing git history or a clone.
+
+CREATE TABLE IF NOT EXISTS connections (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL,              -- 'github' | 'heroku'
+  label       TEXT NOT NULL,              -- friendly name shown in buttons
+  token       TEXT NOT NULL,
+  account     TEXT,                       -- github login / heroku email, verified at connect time
+  created_at  TEXT NOT NULL,
+  UNIQUE (kind, label)
+);
+
+CREATE TABLE IF NOT EXISTS repos (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  label         TEXT NOT NULL UNIQUE,     -- what the VA sees, e.g. "Main site"
+  owner         TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  branch        TEXT NOT NULL DEFAULT 'main',
+  connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  created_at    TEXT NOT NULL,
+  UNIQUE (owner, name)
+);
+
+CREATE TABLE IF NOT EXISTS apps (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  label         TEXT NOT NULL UNIQUE,
+  heroku_name   TEXT NOT NULL,
+  connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  repo_id       INTEGER REFERENCES repos(id) ON DELETE SET NULL,
+  web_url       TEXT,
+  created_at    TEXT NOT NULL,
+  UNIQUE (connection_id, heroku_name)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  telegram_id INTEGER PRIMARY KEY,
+  name        TEXT,
+  role        TEXT NOT NULL,              -- 'owner' | 'va'
+  added_at    TEXT NOT NULL
+);
+
+-- One in-flight conversation per user. `data` is JSON and also carries the
+-- button option list, because Telegram caps callback_data at 64 bytes and a
+-- repo path can easily exceed that -- buttons therefore carry an index only.
+CREATE TABLE IF NOT EXISTS state (
+  telegram_id INTEGER PRIMARY KEY,
+  step        TEXT,
+  data        TEXT,
+  updated_at  TEXT NOT NULL
+);
+
+-- Remembers the folder the VA used last for a given repo, so the common case
+-- ("same folder as last time") is one tap instead of a walk down the tree.
+CREATE TABLE IF NOT EXISTS last_paths (
+  telegram_id INTEGER NOT NULL,
+  repo_id     INTEGER NOT NULL,
+  dir         TEXT NOT NULL,
+  PRIMARY KEY (telegram_id, repo_id)
+);
+
+CREATE TABLE IF NOT EXISTS deploys (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  telegram_id   INTEGER NOT NULL,
+  repo_id       INTEGER NOT NULL,
+  app_id        INTEGER,
+  path          TEXT NOT NULL,
+  file_name     TEXT,
+  commit_sha    TEXT,
+  prev_blob_sha TEXT,                     -- NULL when the file did not exist before
+  new_blob_sha  TEXT,
+  build_id      TEXT,
+  build_status  TEXT,                     -- pending | succeeded | failed | no_app | error
+  build_error   TEXT,
+  chat_id       INTEGER,
+  message_id    INTEGER,                  -- message edited in place with the build result
+  is_undo       INTEGER DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  finished_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS deploys_pending ON deploys (build_status, created_at);
+CREATE INDEX IF NOT EXISTS deploys_recent  ON deploys (created_at DESC);
