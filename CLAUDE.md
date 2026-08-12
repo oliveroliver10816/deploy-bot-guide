@@ -102,3 +102,67 @@ restore and delete-a-new-file), the superseded-upload guard, path traversal, and
 ## Open / next
 - Bob supplies the 4 items above; then a real end-to-end run on one real file.
 - Not built (not asked for): ZIP/folder pushes, multi-file batches, staging branches, approval gate.
+
+
+---
+
+# WEB PANEL (2026-08-12, Bob's redesign) — the primary interface now
+
+Bob's clarification: he wanted a **standalone website** talking straight to GitHub + Heroku,
+**nothing to do with Telegram**. Built. The Telegram bot still works and was left running.
+
+## Live
+- **Backend:** same Worker, `/api/*` routes — `deploy-bot.fleet-fefsba.workers.dev`
+- **Front end:** ONE self-contained `index.html`, uploaded by Bob to **ail.com.de/deploy**
+  (his CLIENT's cPanel — 🛑 **we have NO access and must never ask for any; he was emphatic**).
+- **Package:** github.com/oliveroliver10816/deploy-bot-guide/releases/download/panel-v1/deploy-panel.zip
+  (md5 `76507624fdb6713558342f1b896b5c74`, download re-verified)
+- **Logins seeded in live D1:** `adm-lumen67` (master) · `va-cedar17` (va). Changeable in-panel.
+
+## Design
+Done by **Fable 5** at Bob's explicit request: 3 independent directions → judged → final build.
+Winner **"conversation"** (guided step, 35/40) with the lever/hazard-stripe Deploy grafted from
+"workbench". Judge found 10 defects in the winner; the final build fixed them.
+
+## Decisions that matter
+- ⭐ **Tokens never reach the browser.** They live in D1; the page is a shell. Verified by a test
+  asserting `/api/state` never contains a stored token.
+- ⭐ **Privacy fast path:** `GH.tarballUrl()` fetches only the *signed codeload URL* and hands THAT
+  to Heroku, so repo contents go GitHub → Heroku and never transit the Worker. Falls back to the
+  upload path automatically (signed link expires ~5 min; Heroku queues builds). Tested both ways.
+- ⭐ **Rejected Heroku's GitHub integration on privacy grounds** — it takes a classic `repo`-scoped
+  OAuth token with read/write on EVERY private repo, permanently. Wrong trade for this client.
+- **Site ids are STRINGS** in `/api/state` and `/api/batch`. The UI reads them from DOM datasets
+  (always strings) and compares with `===`; numbers silently broke every lookup between ticking a
+  box and confirming. There is a test locking this.
+- Backend is deliberately **forgiving** about shapes the designer drifted on (`accounts[].login`,
+  `discover` returning `.repos`/`.apps`, `link` accepting `{site_id, app}`, password
+  `current`/`next`, `conn_id` optional when only one account exists) — cheaper than editing the
+  design in a dozen places.
+- Auth: PBKDF2-SHA256 **100k** iters (Workers cap), per-user salt, constant-time compare, 12 h
+  sessions as Bearer tokens in sessionStorage, login rate-limited 10/15 min per IP.
+- CORS locked to `PANEL_ORIGIN` (`https://ail.com.de`), preflight cached 24 h for speed.
+- `MAX_SITES_PER_BATCH = 10` — keeps one request under the Worker subrequest ceiling.
+
+## Verified
+- `node test/panel.js` → **72/72**; `node test/run.js` → **69/69** (bot still green).
+- Browser (Playwright, desktop + phone): no console/page errors, no horizontal overflow, VA cannot
+  see Settings, all four settings tabs render.
+- **Live end-to-end from the real origin** — served the packaged ZIP over HTTPS with
+  `--host-resolver-rules=MAP ail.com.de 127.0.0.1`, so `location.origin` was genuinely
+  `https://ail.com.de`: login OK against live D1, wrong password → "Wrong username or password."
+  ⚠️ `file://` gives origin `null` and IS blocked by CORS — that is correct behaviour, not a bug.
+
+## Bugs found by actually running it (do not regress)
+- ⭐ `startDeploy` called `renderMain()` BEFORE setting `S.poll`, so `renderStep3` saw no poller and
+  showed the "lost contact / Check again" state for the entire deploy. Reordered.
+- ⭐ The design hardcoded `API.deploy(..., 'replace')`, which would have failed every NEW file.
+  Now `'auto'`.
+- Null guards added: `openSettings` and `renderMain` bail when `S.data` is not loaded yet.
+
+## Still open
+- **No GitHub or Heroku token yet** — by design, Bob enters them in the panel. Until then no real
+  commit/deploy has ever run. `seed.py github|heroku <tok>` can also load them server-side.
+- The codeload-URL-vs-Heroku-queue timing is **unmeasured against a real build** (fallback covers it).
+- Heroku app creation needs a **verified** account (card on file); no free tier.
+- Creating repos needs the GitHub token scoped to **All repositories** + Administration: R/W.
