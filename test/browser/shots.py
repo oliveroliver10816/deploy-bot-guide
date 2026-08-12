@@ -1,45 +1,43 @@
-import asyncio, os
+"""Capture knowledge-base screenshots from the current design (mock data)."""
+import asyncio, os, sys
 from playwright.async_api import async_playwright
-D="/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview"
-OUT="/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/kbshots"
+P = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/kbshots"
 os.makedirs(OUT, exist_ok=True)
+
 async def main():
     async with async_playwright() as p:
-        br=await p.chromium.launch()
-        pg=await br.new_page(viewport={"width":900,"height":800}, device_scale_factor=2)
-        async def shot(n, sel="body"):
-            el = await pg.query_selector(sel)
+        br = await p.chromium.launch()
+        pg = await br.new_page(viewport={"width": 1500, "height": 940}, device_scale_factor=2)
+        async def shot(n, sel=None):
+            el = await pg.query_selector(sel) if sel else None
             await (el.screenshot(path=f"{OUT}/{n}.png") if el else pg.screenshot(path=f"{OUT}/{n}.png"))
             print("shot", n)
-        await pg.goto(f"file://{D}/index.html"); await pg.wait_for_timeout(500)
-        # the offline-preview note must not appear in the shipped guide
-        await pg.evaluate("()=>{const n=document.querySelector('#demo-note'); if(n) n.hidden=true;}")
-        await pg.wait_for_timeout(150)
-        await shot("01-login", ".login-card")
-        await pg.fill("#lg-u","bob"); await pg.fill("#lg-p","x"); await pg.click("#lg-btn")
-        await pg.wait_for_selector("#scr-main:not([hidden])", timeout=20000); await pg.wait_for_timeout(500)
+        await pg.goto(f"file://{P}"); await pg.wait_for_timeout(500)
+        await pg.evaluate("()=>{const n=document.querySelector('#demoNote'); if(n) n.hidden=true;}")
+        await shot("01-login", "#auth")
+        await pg.fill('#loginForm [name=username]', "owner"); await pg.fill('#loginForm [name=password]', "x")
+        await pg.click("#loginBtn"); await pg.wait_for_selector("#shell:not([hidden])", timeout=20000)
+        await pg.wait_for_timeout(700)
         await shot("02-sites")
-        await pg.click("#selall"); await pg.wait_for_timeout(250)
-        await shot("03-selected")
-        await pg.click("#nextbtn"); await pg.wait_for_timeout(400)
-        await shot("04-file")
-        await pg.set_input_files("#fpick", {"name":"index.html","mimeType":"text/html","buffer":b"<h1>hi</h1>"})
-        await pg.wait_for_timeout(400)
+        await pg.click("label:has(#selAll)"); await pg.wait_for_timeout(300)
+        await pg.set_input_files("input[type=file]", {"name": "summer-sale.html", "mimeType": "text/html", "buffer": b"<h1>hi</h1>"})
+        await pg.wait_for_timeout(500)
         await shot("05-filechosen")
-        await pg.click("#nextbtn"); await pg.wait_for_timeout(400)
         await shot("06-confirm")
-        await pg.click("#deploybtn"); await pg.wait_for_timeout(2500)
-        await shot("07-progress")
-        await pg.wait_for_timeout(9000)
+        await pg.click("#deployBtn")
+        for _ in range(20):
+            await pg.wait_for_timeout(2000)
+            t = await pg.evaluate("() => (document.querySelector('#activityBody')||{innerText:''}).innerText")
+            u = await pg.evaluate("""() => [...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&/undo/i.test(b.textContent))""")
+            if u and any(w in t.lower() for w in ("live", "failed", "saved")): break
         await shot("08-done")
-        # settings
-        await pg.click("#btn-settings"); await pg.wait_for_timeout(900)
+        await pg.click("[data-view=settings]"); await pg.wait_for_timeout(800)
         await shot("09-keys")
-        await pg.click('[data-tab="sites"]'); await pg.wait_for_timeout(1200)
-        await shot("10-websites")
-        await pg.click("#addsite"); await pg.wait_for_timeout(2500)
-        await shot("11-addsite")
-        await pg.click('[data-tab="users"]'); await pg.wait_for_timeout(1200)
-        await shot("12-people")
+        tabs = await pg.query_selector_all(".tab")
+        if len(tabs) > 1:
+            await tabs[1].click(); await pg.wait_for_timeout(2500); await shot("11-addsite")
+        if len(tabs) > 3:
+            await tabs[3].click(); await pg.wait_for_timeout(1200); await shot("12-people")
         await br.close()
 asyncio.run(main())

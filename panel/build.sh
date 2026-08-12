@@ -4,36 +4,59 @@
 #   ./build.sh
 #
 # Produces dist/deploy-panel.zip containing exactly what goes in public_html/deploy/.
+#
+# Everything that MODIFIES the page happens here, on a COPY in dist/ — never on the
+# source. An earlier version injected into the source in place and, run four times,
+# produced four "Help" buttons with duplicate ids that shipped to the client.
+# The source keeps <!--KB_SCREENSHOT:name--> placeholders and is never written to.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 API_BASE="https://deploy-bot.fleet-fefsba.workers.dev"
+SHOTS="${SHOTS_JSON:-$HERE/shots/shots.json}"
 OUT="$HERE/dist"
 STAGE="$OUT/deploy"
 
 rm -rf "$OUT"; mkdir -p "$STAGE"
 
-if [ ! -s "$HERE/public/index.html" ]; then
-  echo "public/index.html is missing or empty — nothing to package." >&2
-  exit 1
-fi
-
+[ -s "$HERE/public/index.html" ] || { echo "public/index.html missing or empty" >&2; exit 1; }
 cp "$HERE/public/index.html" "$STAGE/index.html"
 
-# Point the page at the live API and make sure the offline mock is off.
-python3 - "$STAGE/index.html" "$API_BASE" <<'PY'
-import re, sys
-path, base = sys.argv[1], sys.argv[2]
+python3 - "$STAGE/index.html" "$API_BASE" "$SHOTS" <<'PY'
+import json, os, re, sys
+path, base, shots_path = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path, encoding="utf-8").read()
+
+# 1. point at the live API, force the offline mock off
 before = s
 s = re.sub(r'(const\s+(?:API_)?BASE\s*=\s*)["\'][^"\']*["\']', r'\1"%s"' % base, s, count=1)
 s = re.sub(r'(const\s+MOCK\s*=\s*)(?:true|false)', r'\1false', s, count=1)
 if s == before:
-    print("  ! WARNING: could not find API_BASE / MOCK to rewrite — check the markup", file=sys.stderr)
+    sys.exit("could not rewrite BASE / MOCK — check the markup")
+
+# 2. swap knowledge-base screenshot placeholders for embedded images
+shots = json.load(open(shots_path)) if os.path.exists(shots_path) else {}
+# NB: [-] is inside the class, so a greedy match swallows the closing "--".
+wanted = re.findall(r'<!--KB_SCREENSHOT:(.+?)-->', s)
+missing = [w for w in wanted if w not in shots]
+for name in set(wanted):
+    tag = (f'<img class="kbshot" loading="lazy" alt="Screenshot: {name}" src="{shots[name]}">'
+           if name in shots else '')
+    s = s.replace(f'<!--KB_SCREENSHOT:{name}-->', tag)
+
+# 3. refuse to ship duplicate ids — this is exactly what went wrong before
+ids = re.findall(r'\sid="([^"]+)"', s)
+dupes = sorted({i for i in ids if ids.count(i) > 1})
+if dupes:
+    sys.exit(f"duplicate element ids in the page: {dupes}")
+
 open(path, "w", encoding="utf-8").write(s)
+print(f"  screenshots embedded: {len(set(wanted)) - len(set(missing))}/{len(set(wanted))}")
+if missing:
+    print(f"  ! placeholders with no image: {sorted(set(missing))}")
+print(f"  duplicate ids: none")
 PY
 
-# Keep it out of search engines even if the URL leaks. The login is the real lock.
 cat > "$STAGE/robots.txt" <<'EOF'
 User-agent: *
 Disallow: /
@@ -47,11 +70,7 @@ cat > "$STAGE/.htaccess" <<'EOF'
   Header set X-Content-Type-Options "nosniff"
   Header set Referrer-Policy "no-referrer"
 </IfModule>
-
-# No directory listing.
 Options -Indexes
-
-# The page is one file; let the browser cache it briefly but always revalidate.
 <IfModule mod_expires.c>
   ExpiresActive On
   ExpiresByType text/html "access plus 0 seconds"
@@ -63,33 +82,26 @@ DEPLOY PANEL — what to do with this folder
 ==========================================
 
 1. Unzip it.
-2. Upload the CONTENTS of the "deploy" folder into your site's  public_html/deploy/
+2. Upload the CONTENTS of the "deploy" folder into  public_html/deploy/
    (so the page ends up at  https://ail.com.de/deploy/ )
    Include the hidden .htaccess file. In cPanel File Manager:
    Settings -> tick "Show Hidden Files" first, or it will be skipped.
 3. Open  https://ail.com.de/deploy/  and sign in.
 
-That is the whole install. No database, no PHP, no settings to edit.
+No database, no PHP, nothing to edit.
 
 FIRST TIME IN
 -------------
 Sign in as the master account, open Settings, and paste:
   - your GitHub token   (Contents: Read and write. Add Administration: Read and write
-                         and set it to All repositories if you want the "create repo" button)
+                         and set it to All repositories for the "create repo" button)
   - your Heroku API key (dashboard.heroku.com -> Account settings -> API Key -> Reveal)
-Then add your sites: pick the repo, give it the domain name you want to see,
-and set the folder files should land in. Link each one to its Heroku app.
+Then add your sites and link each one to its Heroku app.
+The Help section in the panel explains every step with pictures.
 
 NOTHING SECRET IS IN THESE FILES
 --------------------------------
-Your tokens are stored on the backend, never in this page. Anyone who downloads
-every file here gets an empty shell.
-
-IF THE PAGE LOADS BUT NOTHING WORKS
------------------------------------
-It is almost always the address. The backend only accepts requests coming from
-https://ail.com.de — if you put the panel on a different domain, say so and it
-takes one minute to allow.
+Your tokens are stored on the backend, never in this page.
 EOF
 
 cd "$OUT"
@@ -97,9 +109,5 @@ zip -qr deploy-panel.zip deploy
 cd - >/dev/null
 
 echo "Built: $OUT/deploy-panel.zip"
-ls -la "$OUT/deploy-panel.zip"
-echo
-echo "Contents:"
 unzip -l "$OUT/deploy-panel.zip" | sed 's/^/  /'
-echo
 echo "md5: $(md5sum "$OUT/deploy-panel.zip" | cut -d' ' -f1)"

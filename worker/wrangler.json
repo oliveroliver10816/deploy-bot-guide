@@ -6,8 +6,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "deploy_bot",
-      "database_id": "3882a8d0-eff9-4dea-9d18-1deac3f5c1ca"
+      "database_name": "deploy_bot_us",
+      "database_id": "7e5e842c-55a8-46c3-9c4b-9872be787f34"
     }
   ],
   "triggers": {

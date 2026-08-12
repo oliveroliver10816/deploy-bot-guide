@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Dispatch — Site delivery console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23181614'/%3E%3Cpath d='M12 4l6 8-6 8-6-8z' fill='%23C99C4F'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   DISPATCH — Direction B "Atelier"
+   System order:
+   1. Design tokens        5. Sign-in
+   2. Reset + base         6. Workspace (main)
+   3. Primitives           7. Settings
+   4. Top bar              8. Knowledge base
+                           9. Toasts + utilities
+   ============================================================ */
+
+/* ---------- 1. DESIGN TOKENS ---------- */
+:root{
+  /* palette — warm graphite monochrome, one brass jewel accent */
+  --bg:          #131211;
+  --bg-deep:     #0E0D0C;
+  --bg-raised:   #1A1917;
+  --surface:     #1F1D1A;
+  --surface-2:   #262320;
+  --surface-3:   #2C2925;
+  --line:        rgba(237,233,226,.08);
+  --line-strong: rgba(237,233,226,.17);
+  --text:        #EDE9E2;
+  --text-2:      #B8B1A5;
+  --text-3:      #958E81;
+  --accent:      #C99C4F;
+  --accent-2:    #E3B968;
+  --accent-soft: rgba(201,156,79,.13);
+  --on-accent:   #1A1610;
+  --ok:          #6DB795;
+  --ok-soft:     rgba(109,183,149,.13);
+  --danger:      #E06B57;
+  --danger-soft: rgba(224,107,87,.12);
+  --warn:        #D9A441;
+
+  /* type scale — fluid, system stack (kept from v1) */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs--1: clamp(.75rem,  .71rem + .18vw,  .85rem);
+  --fs-0:  clamp(.95rem,  .92rem + .18vw, 1.05rem);
+  --fs-1:  clamp(1.1rem,  1.05rem + .3vw, 1.3rem);
+  --fs-2:  clamp(1.35rem, 1.25rem + .55vw,1.7rem);
+  --fs-3:  clamp(1.8rem,  1.6rem + 1vw,   2.5rem);
+  --fs-4:  clamp(2.3rem,  1.9rem + 2vw,   3.6rem);
+
+  /* spacing scale */
+  --s1:.25rem; --s2:.5rem; --s3:.75rem; --s4:1rem;
+  --s5:1.5rem; --s6:2rem;  --s7:3rem;   --s8:4rem;
+  --gutter: clamp(1rem, 3.4vw, 6rem);
+
+  /* radius */
+  --r-s:6px; --r-m:10px; --r-l:16px; --r-pill:999px;
+
+  /* elevation */
+  --e1: 0 1px 2px rgba(0,0,0,.45);
+  --e2: 0 2px 6px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.28);
+  --e3: 0 4px 14px rgba(0,0,0,.42), 0 22px 56px rgba(0,0,0,.36);
+  --hairline-top: inset 0 1px 0 rgba(255,255,255,.05);
+
+  /* motion */
+  --fast:.15s ease; --med:.25s ease;
+}
+
+/* ---------- 2. RESET + BASE ---------- */
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; font-family:var(--font); font-size:var(--fs-0); line-height:1.55;
+  color:var(--text); background:var(--bg); min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(120rem 40rem at 50% -20rem, rgba(201,156,79,.06), transparent 60%),
+    radial-gradient(80rem 50rem at 100% 110%, rgba(255,255,255,.015), transparent 55%);
+}
+#app{position:relative; z-index:1; min-height:100vh; display:flex; flex-direction:column}
+h1,h2,h3,h4{margin:0; line-height:1.15; letter-spacing:-.015em; font-weight:650}
+p{margin:0 0 var(--s4)}
+a{color:var(--accent-2); text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{margin:0; padding:0}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+::selection{background:var(--accent); color:var(--on-accent)}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important; transition-duration:.01ms !important}
+}
+*{scrollbar-width:thin; scrollbar-color:var(--surface-3) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--surface-3); border-radius:99px; border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+.skip{position:absolute; left:var(--s4); top:-4rem; z-index:100; background:var(--accent); color:var(--on-accent);
+  padding:var(--s3) var(--s4); border-radius:var(--r-m); font-weight:650; transition:top var(--fast)}
+.skip:focus{top:var(--s4)}
+
+/* ---------- 3. PRIMITIVES ---------- */
+.icon{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.icon.sm{width:16px;height:16px}
+.icon.lg{width:26px;height:26px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.rotating{animation:rot .9s linear infinite}
+
+.kicker{
+  font-size:var(--fs--1); font-weight:650; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--text-3); display:block; margin-bottom:var(--s2);
+}
+.kicker.accent{color:var(--accent)}
+
+/* buttons — one hierarchy: primary / secondary / ghost / danger */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+  min-height:44px; padding:0 var(--s5); border-radius:var(--r-m);
+  border:1px solid transparent; font:inherit; font-size:var(--fs-0); font-weight:640;
+  color:var(--text); background:none; cursor:pointer; white-space:nowrap;
+  transition:background var(--fast), border-color var(--fast), box-shadow var(--fast), transform var(--fast), opacity var(--fast);
+  position:relative;
+}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.42; cursor:not-allowed}
+.btn-primary{
+  background:linear-gradient(180deg,#E2B663,#BE8D3C); color:var(--on-accent);
+  border-color:rgba(0,0,0,.5); box-shadow:var(--e1), inset 0 1px 0 rgba(255,255,255,.28);
+}
+.btn-primary:hover:not(:disabled){background:linear-gradient(180deg,#EFC576,#CD9A46); box-shadow:var(--e2), inset 0 1px 0 rgba(255,255,255,.3)}
+.btn-secondary{
+  background:linear-gradient(180deg,var(--surface-3),var(--surface-2));
+  border-color:var(--line-strong); box-shadow:var(--e1), var(--hairline-top);
+}
+.btn-secondary:hover:not(:disabled){border-color:rgba(237,233,226,.3); background:linear-gradient(180deg,#332F2A,#2B2823)}
+.btn-ghost{color:var(--text-2)}
+.btn-ghost:hover:not(:disabled){background:var(--surface-2); color:var(--text)}
+.btn-danger{border-color:rgba(224,107,87,.4); color:var(--danger)}
+.btn-danger:hover:not(:disabled){background:var(--danger-soft); border-color:rgba(224,107,87,.65)}
+.btn-danger.armed{background:var(--danger); color:#1C0F0C; border-color:var(--danger)}
+.btn .spin{display:none}
+.btn.is-loading{pointer-events:none}
+.btn.is-loading .spin{display:inline-flex}
+.btn.is-loading .btn-label{opacity:.65}
+.btn-icon{width:44px; padding:0}
+.btn-lg{min-height:52px; font-size:var(--fs-1); padding:0 var(--s6); border-radius:12px}
+
+/* fields */
+.field{display:flex; flex-direction:column; gap:var(--s2); margin-bottom:var(--s4)}
+.field > label{font-size:var(--fs--1); font-weight:650; letter-spacing:.08em; text-transform:uppercase; color:var(--text-3)}
+.input, select.input{
+  width:100%; min-height:44px; padding:0 var(--s4); font:inherit; color:var(--text);
+  background:var(--bg-raised); border:1px solid var(--line-strong); border-radius:var(--r-m);
+  transition:border-color var(--fast), box-shadow var(--fast);
+}
+.input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+.input::placeholder{color:var(--text-3)}
+select.input{appearance:none; background-image:linear-gradient(45deg,transparent 50%,var(--text-3) 50%),linear-gradient(135deg,var(--text-3) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size:5px 5px; background-repeat:no-repeat; padding-right:var(--s6)}
+
+/* custom checkbox */
+.check{display:inline-flex; align-items:center; gap:var(--s3); cursor:pointer; min-height:44px}
+.check input{position:absolute; width:1px;height:1px; opacity:0}
+.check .box{
+  width:20px;height:20px; flex:none; border-radius:var(--r-s); border:1.5px solid var(--line-strong);
+  background:var(--bg-raised); display:grid; place-items:center; color:transparent; transition:all var(--fast);
+}
+.check:hover .box{border-color:var(--accent)}
+.check input:checked + .box{background:var(--accent); border-color:var(--accent); color:var(--on-accent)}
+.check input:focus-visible + .box{outline:2px solid var(--accent); outline-offset:2px}
+
+/* panel (card) */
+.panel{
+  background:linear-gradient(180deg,var(--surface-2),var(--surface));
+  border:1px solid var(--line); border-radius:var(--r-l);
+  box-shadow:var(--e2), var(--hairline-top); align-self:start; min-width:0;
+}
+.panel-head{
+  padding:var(--s5) var(--s5) var(--s4); border-bottom:1px solid var(--line);
+  display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s4); flex-wrap:wrap;
+}
+.panel-head h2{font-size:var(--fs-1)}
+.panel-body{padding:var(--s5)}
+
+/* status pill */
+.pill{
+  display:inline-flex; align-items:center; gap:var(--s2);
+  font-size:var(--fs--1); font-weight:650; letter-spacing:.02em;
+  padding:.3rem .7rem; border-radius:var(--r-pill); border:1px solid var(--line-strong);
+  color:var(--text-2); background:var(--bg-raised); white-space:nowrap;
+}
+.pill .icon{width:14px;height:14px}
+.pill.ok{color:var(--ok); border-color:rgba(109,183,149,.4); background:var(--ok-soft)}
+.pill.bad{color:var(--danger); border-color:rgba(224,107,87,.4); background:var(--danger-soft)}
+.pill.busy{color:var(--accent-2); border-color:rgba(201,156,79,.42); background:var(--accent-soft)}
+.pill.dim{color:var(--text-3)}
+
+.tag{
+  display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--accent); border:1px solid rgba(201,156,79,.45); border-radius:var(--r-pill);
+  padding:.12rem .55rem; vertical-align:middle;
+}
+
+.divider{border:0; border-top:1px solid var(--line); margin:var(--s5) 0}
+.muted{color:var(--text-2)} .faint{color:var(--text-3)} .mono{font-variant-numeric:tabular-nums}
+
+/* ---------- 4. TOP BAR ---------- */
+.topbar{
+  position:sticky; top:0; z-index:40;
+  display:flex; align-items:center; gap:var(--s5);
+  padding:0 var(--gutter); min-height:64px;
+  background:rgba(19,18,17,.88); backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:var(--s3); color:var(--text); font-weight:700; letter-spacing:-.01em; font-size:var(--fs-1)}
+.brand .mark{width:26px;height:26px; flex:none}
+.brand small{display:block; font-size:.65rem; font-weight:650; letter-spacing:.22em; text-transform:uppercase; color:var(--text-3); line-height:1}
+.topnav{display:flex; gap:var(--s1); margin-inline:auto}
+.topnav button{
+  display:inline-flex; align-items:center; gap:var(--s2);
+  min-height:44px; padding:0 var(--s4); border:0; background:none; cursor:pointer;
+  font:inherit; font-weight:640; color:var(--text-2); border-radius:var(--r-m);
+  position:relative; transition:color var(--fast), background var(--fast);
+}
+.topnav button:hover{color:var(--text); background:var(--surface-2)}
+.topnav button[aria-current="page"]{color:var(--text)}
+.topnav button[aria-current="page"]::after{
+  content:""; position:absolute; left:var(--s4); right:var(--s4); bottom:-1px; height:2px;
+  background:var(--accent); border-radius:2px;
+}
+.userchip{display:flex; align-items:center; gap:var(--s3)}
+.avatar{
+  width:34px;height:34px; border-radius:50%; display:grid; place-items:center; flex:none;
+  background:linear-gradient(180deg,var(--surface-3),var(--surface-2)); border:1px solid var(--line-strong);
+  font-size:.85rem; font-weight:700; color:var(--accent-2); text-transform:uppercase;
+}
+.userchip .who{line-height:1.2; text-align:right}
+.userchip .who b{display:block; font-size:var(--fs--1)}
+.userchip .who span{font-size:.7rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3)}
+@media (max-width:760px){
+  .topnav button .navlabel{display:none}
+  .userchip .who{display:none}
+  .brand .wordsub{display:none}
+}
+@media (max-width:480px){
+  .topbar{gap:var(--s3)}
+  .topnav{gap:0}
+  .topnav button{padding:0 var(--s3)}
+  .brand > span:last-child{display:none}
+  .userchip{gap:var(--s2)}
+}
+
+/* view shell */
+.view{padding:var(--s6) var(--gutter) var(--s8); width:100%}
+.pagehead{margin-bottom:var(--s6); max-width:70ch}
+.pagehead h1{font-size:var(--fs-3)}
+.pagehead .sub{color:var(--text-2); margin-top:var(--s3); font-size:var(--fs-1); line-height:1.5}
+
+/* ---------- 5. SIGN-IN ---------- */
+.login{flex:1; display:grid; grid-template-columns:1fr; min-height:100vh}
+@media (min-width:1000px){.login{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}}
+.login-hero{
+  display:none; padding:var(--s8) var(--gutter);
+  border-right:1px solid var(--line);
+  background:
+    radial-gradient(60rem 40rem at 20% 0%, rgba(201,156,79,.08), transparent 55%),
+    linear-gradient(180deg,var(--bg-deep),var(--bg));
+  flex-direction:column; justify-content:space-between;
+}
+@media (min-width:1000px){.login-hero{display:flex}}
+.login-hero h1{font-size:var(--fs-4); max-width:12ch; letter-spacing:-.02em}
+.login-hero .rule{width:72px; height:3px; background:var(--accent); border-radius:2px; margin:var(--s5) 0}
+.login-hero p{color:var(--text-2); max-width:44ch; font-size:var(--fs-1)}
+.login-hero footer{color:var(--text-3); font-size:var(--fs--1); letter-spacing:.14em; text-transform:uppercase}
+.login-side{display:flex; align-items:center; justify-content:center; padding:var(--s6) var(--gutter)}
+.login-card{width:100%; max-width:420px}
+.login-card .brand{margin-bottom:var(--s6)}
+.login-card h2{font-size:var(--fs-2); margin-bottom:var(--s2)}
+.login-card .lead{color:var(--text-2); margin-bottom:var(--s5)}
+.login-err{
+  display:flex; gap:var(--s3); align-items:flex-start;
+  background:var(--danger-soft); border:1px solid rgba(224,107,87,.4); color:var(--danger);
+  border-radius:var(--r-m); padding:var(--s3) var(--s4); margin-bottom:var(--s4); font-weight:600;
+}
+.demo-hint{
+  margin-top:var(--s5); padding:var(--s4); border:1px dashed var(--line-strong); border-radius:var(--r-m);
+  color:var(--text-3); font-size:var(--fs--1); line-height:1.7;
+}
+.demo-hint b{color:var(--text-2)}
+
+/* ---------- 6. WORKSPACE ---------- */
+.workspace{display:grid; gap:var(--s5); grid-template-columns:minmax(0,1fr)}
+@media (min-width:880px){.workspace{grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr)}
+  .ws-sites{grid-column:1 / -1}}
+@media (min-width:1360px){
+  .workspace{grid-template-columns:minmax(400px,1.35fr) minmax(330px,.85fr) minmax(400px,1.15fr)}
+  .ws-sites{grid-column:auto}
+}
+@media (min-width:2100px){.workspace{gap:var(--s6)}}
+
+/* site cards */
+.site-grid{list-style:none; display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.site-card{position:relative; display:block}
+.site-card input{position:absolute; opacity:0; width:1px; height:1px}
+.site-card .card{
+  display:flex; flex-direction:column; gap:var(--s2); min-height:96px; height:100%;
+  padding:var(--s4); border-radius:var(--r-m); cursor:pointer;
+  background:var(--bg-raised); border:1px solid var(--line-strong);
+  transition:border-color var(--fast), background var(--fast), box-shadow var(--fast);
+}
+.site-card:hover .card{border-color:rgba(237,233,226,.32)}
+.site-card:has(input:checked) .card{
+  border-color:var(--accent); background:linear-gradient(180deg,rgba(201,156,79,.13),rgba(201,156,79,.06));
+  box-shadow:0 0 0 1px var(--accent), var(--e1);
+}
+.site-card:has(input:focus-visible) .card{outline:2px solid var(--accent); outline-offset:2px}
+.site-card .tick{
+  position:absolute; top:var(--s3); right:var(--s3); width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center; border:1.5px solid var(--line-strong); color:transparent;
+  background:var(--surface); transition:all var(--fast);
+}
+.site-card:has(input:checked) .tick{background:var(--accent); border-color:var(--accent); color:var(--on-accent)}
+.site-domain{font-weight:680; font-size:var(--fs-1); letter-spacing:-.01em; word-break:break-all; padding-right:var(--s6)}
+.site-meta{display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); color:var(--text-3); font-size:var(--fs--1); margin-top:auto}
+.site-meta span{display:inline-flex; align-items:center; gap:.35rem}
+.site-meta .linked{color:var(--ok)} .site-meta .unlinked{color:var(--text-3)}
+
+/* dropzone */
+.dropzone{
+  width:100%; border:1.5px dashed var(--line-strong); border-radius:var(--r-m);
+  background:var(--bg-raised); color:var(--text-2); cursor:pointer;
+  padding:var(--s6) var(--s4); display:flex; flex-direction:column; align-items:center; gap:var(--s3);
+  font:inherit; text-align:center; transition:border-color var(--fast), background var(--fast);
+}
+.dropzone:hover, .dropzone.drag{border-color:var(--accent); background:var(--accent-soft); color:var(--text)}
+.dropzone .icon{width:30px;height:30px; color:var(--accent)}
+.dropzone b{font-size:var(--fs-1); font-weight:650; color:var(--text)}
+.dropzone span{font-size:var(--fs--1); color:var(--text-3)}
+.filechip{
+  display:flex; align-items:center; gap:var(--s3);
+  background:var(--bg-raised); border:1px solid var(--line-strong); border-radius:var(--r-m);
+  padding:var(--s3) var(--s4);
+}
+.filechip .icon{color:var(--accent)}
+.filechip .fname{font-weight:650; word-break:break-all}
+.filechip .fsize{color:var(--text-3); font-size:var(--fs--1)}
+.filechip .btn{margin-left:auto}
+.readiness{list-style:none; margin:var(--s4) 0; display:flex; flex-direction:column; gap:var(--s2)}
+.readiness li{display:flex; align-items:center; gap:var(--s3); color:var(--text-3); font-size:var(--fs--1); font-weight:600}
+.readiness li.done{color:var(--ok)}
+
+/* batch + activity */
+.batch-file{display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s4); color:var(--text-2); font-size:var(--fs--1)}
+.batch-file b{color:var(--text)}
+.target-list{list-style:none; display:flex; flex-direction:column}
+.target-list li{
+  display:flex; align-items:flex-start; gap:var(--s4); padding:var(--s3) 0;
+  border-bottom:1px solid var(--line);
+}
+.target-list li:last-child{border-bottom:0}
+.target-list .t-main{min-width:0; flex:1}
+.target-list .t-domain{font-weight:650; word-break:break-all}
+.target-list .t-detail{color:var(--text-3); font-size:var(--fs--1); margin-top:.15rem; line-height:1.5}
+.target-list .t-detail.err{color:var(--danger)}
+.target-list .t-detail .icon{vertical-align:-3px}
+.batch-summary{
+  margin-top:var(--s4); padding:var(--s4); border-radius:var(--r-m);
+  background:var(--bg-raised); border:1px solid var(--line-strong);
+  display:flex; align-items:center; gap:var(--s4); flex-wrap:wrap;
+}
+.batch-summary .sumline{font-weight:680; font-size:var(--fs-1)}
+.batch-summary .btn{margin-left:auto}
+.undone-note{display:flex; gap:var(--s3); align-items:center; color:var(--accent-2); font-weight:650; margin-top:var(--s4)}
+.recent-list{list-style:none; display:flex; flex-direction:column}
+.recent-list li{display:flex; gap:var(--s3); align-items:baseline; padding:var(--s3) 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+.recent-list li:last-child{border-bottom:0}
+.recent-list .r-file{font-weight:650}
+.recent-list .r-meta{color:var(--text-3); font-size:var(--fs--1)}
+.recent-list .r-when{margin-left:auto; color:var(--text-3); font-size:var(--fs--1); white-space:nowrap}
+.empty{
+  color:var(--text-3); text-align:center; padding:var(--s6) var(--s4);
+  border:1px dashed var(--line); border-radius:var(--r-m); font-size:var(--fs--1); line-height:1.7;
+}
+
+/* ---------- 7. SETTINGS ---------- */
+.settings{display:grid; gap:var(--s5); grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.settings{grid-template-columns:230px minmax(0,1fr)}}
+.setnav{display:flex; gap:var(--s1); overflow-x:auto; padding-bottom:var(--s2)}
+@media (min-width:900px){.setnav{flex-direction:column; overflow:visible; position:sticky; top:calc(64px + var(--s5)); align-self:start}}
+.setnav button{
+  display:flex; align-items:center; gap:var(--s3); min-height:44px; padding:0 var(--s4);
+  border:0; background:none; font:inherit; font-weight:640; color:var(--text-2); cursor:pointer;
+  border-radius:var(--r-m); text-align:left; white-space:nowrap; transition:background var(--fast), color var(--fast);
+}
+.setnav button:hover{background:var(--surface-2); color:var(--text)}
+.setnav button[aria-current="true"]{background:var(--accent-soft); color:var(--accent-2)}
+.setpane{display:grid; gap:var(--s5); grid-template-columns:minmax(0,1fr); align-content:start}
+@media (min-width:1500px){.setpane.two-up{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.conn-row{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+.conn-row:last-child{border-bottom:0}
+.conn-row .icon{color:var(--accent)}
+.conn-row b{word-break:break-all}
+.siterow{border-bottom:1px solid var(--line); padding:var(--s4) 0}
+.siterow:last-child{border-bottom:0}
+.siterow-top{display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap}
+.siterow-top .dom{font-weight:680; font-size:var(--fs-1)}
+.siterow-top .actions{margin-left:auto; display:flex; gap:var(--s2)}
+.siterow .meta{color:var(--text-3); font-size:var(--fs--1); display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); margin-top:var(--s1)}
+.siterow .meta span{display:inline-flex; align-items:center; gap:.35rem}
+.editform{
+  margin-top:var(--s4); padding:var(--s4); background:var(--bg-raised);
+  border:1px solid var(--line-strong); border-radius:var(--r-m);
+  display:grid; gap:0 var(--s4); grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+}
+.editform .field{margin-bottom:var(--s3)}
+.editform .formfoot{grid-column:1 / -1; display:flex; gap:var(--s3); justify-content:flex-end; margin-top:var(--s2)}
+.repo-list{list-style:none}
+.repo-list li{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+.repo-list li:last-child{border-bottom:0}
+.repo-list .rname{font-weight:650; word-break:break-all}
+.repo-list .rmeta{color:var(--text-3); font-size:var(--fs--1)}
+.repo-list .btn{margin-left:auto}
+.people-row{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line)}
+.people-row:last-child{border-bottom:0}
+.people-row .btn{margin-left:auto}
+.inline-form{display:flex; gap:var(--s3); flex-wrap:wrap; align-items:flex-end}
+.inline-form .field{flex:1 1 180px; margin-bottom:0}
+.inline-form .btn{flex:none}
+
+/* ---------- 8. KNOWLEDGE BASE ---------- */
+.kb{display:grid; gap:var(--s5); grid-template-columns:minmax(0,1fr)}
+@media (min-width:980px){.kb{grid-template-columns:300px minmax(0,1fr)}}
+@media (min-width:2000px){.kb{grid-template-columns:340px minmax(0,1fr)}}
+.kb-nav{position:sticky; top:calc(64px + var(--s5)); align-self:start}
+.kb-nav ol{list-style:none}
+.kb-nav button{
+  width:100%; display:flex; align-items:center; gap:var(--s3); text-align:left;
+  min-height:48px; padding:var(--s2) var(--s4); border:0; background:none; cursor:pointer;
+  font:inherit; font-weight:620; color:var(--text-2); border-radius:var(--r-m);
+  transition:background var(--fast), color var(--fast);
+}
+.kb-nav button:hover{background:var(--surface-2); color:var(--text)}
+.kb-nav button[aria-current="true"]{background:var(--accent-soft); color:var(--text)}
+.kb-nav .num{
+  font-variant-numeric:tabular-nums; color:var(--text-3); font-size:var(--fs--1); font-weight:700; width:1.6em; flex:none;
+}
+.kb-nav button[aria-current="true"] .num{color:var(--accent)}
+.kb-nav .tag{margin-left:auto}
+.kb-read{padding:clamp(var(--s5), 3vw, var(--s7))}
+.kb-read .chapter-kicker{color:var(--accent); font-size:var(--fs--1); font-weight:700; letter-spacing:.16em; text-transform:uppercase; margin-bottom:var(--s3); display:flex; align-items:center; gap:var(--s3)}
+.kb-read h2{font-size:var(--fs-3); margin-bottom:var(--s5); letter-spacing:-.02em}
+.kb-prose{max-width:74ch; font-size:var(--fs-1); line-height:1.65; color:var(--text-2)}
+.kb-prose h3{color:var(--text); font-size:var(--fs-1); margin:var(--s6) 0 var(--s3)}
+.kb-prose p{margin:0 0 var(--s4)}
+.kb-prose b{color:var(--text)}
+.kb-prose ol.steps{list-style:none; counter-reset:step; margin:var(--s5) 0; display:flex; flex-direction:column; gap:var(--s4)}
+.kb-prose ol.steps > li{position:relative; padding-left:3.2rem; counter-increment:step}
+.kb-prose ol.steps > li::before{
+  content:counter(step, decimal-leading-zero); position:absolute; left:0; top:.1rem;
+  font-size:var(--fs--1); font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums;
+  border:1px solid rgba(201,156,79,.45); border-radius:var(--r-pill); padding:.1rem .55rem;
+}
+.kb-prose dl{margin:var(--s5) 0; border-top:1px solid var(--line)}
+.kb-prose dt{font-weight:680; color:var(--text); padding-top:var(--s4)}
+.kb-prose dd{margin:0 0 var(--s4); padding-bottom:var(--s4); border-bottom:1px solid var(--line)}
+.kb-callout{
+  display:flex; gap:var(--s3); margin:var(--s5) 0; padding:var(--s4);
+  background:var(--accent-soft); border:1px solid rgba(201,156,79,.35); border-radius:var(--r-m); color:var(--text-2);
+}
+.kb-callout .icon{color:var(--accent); margin-top:.15rem; flex:none}
+
+/* ---------- 9. TOASTS + UTILITIES ---------- */
+#toasts{position:fixed; right:var(--s5); bottom:var(--s5); z-index:90; display:flex; flex-direction:column; gap:var(--s3); max-width:min(90vw,420px)}
+.toast{
+  display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s4);
+  background:linear-gradient(180deg,var(--surface-3),var(--surface-2));
+  border:1px solid var(--line-strong); border-left:3px solid var(--accent);
+  border-radius:var(--r-m); box-shadow:var(--e3); font-weight:600;
+  animation:toast-in .28s ease;
+}
+.toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--danger)}
+.toast .icon{margin-top:.1rem; color:var(--text-2); flex:none}
+.toast.ok .icon{color:var(--ok)} .toast.err .icon{color:var(--danger)}
+@keyframes toast-in{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+.row{display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap}
+.grow{flex:1}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#1F1D1A" stroke="none"/><path d="M12 4.5l5.5 7.5-5.5 7.5-5.5-7.5z" fill="#C99C4F" stroke="none"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip" href="#views">Skip to content</a>
+
+<div id="app">
+  <header class="topbar" id="topbar" hidden>
+    <span class="brand">
+      <svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg>
+      <span>Dispatch<small class="wordsub">Site delivery</small></span>
+    </span>
+    <nav class="topnav" aria-label="Main">
+      <button type="button" data-nav="main"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span class="navlabel">Workspace</span></button>
+      <button type="button" data-nav="kb"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg><span class="navlabel">Guide</span></button>
+      <button type="button" data-nav="settings" id="nav-settings"><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg><span class="navlabel">Settings</span></button>
+    </nav>
+    <div class="userchip">
+      <span class="who"><b id="chip-name"></b><span id="chip-role"></span></span>
+      <span class="avatar" id="chip-avatar" aria-hidden="true"></span>
+      <button type="button" class="btn btn-ghost btn-icon" id="btn-signout" aria-label="Sign out" title="Sign out">
+        <svg class="icon" aria-hidden="true"><use href="#i-logout"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="views" style="display:flex;flex-direction:column;flex:1">
+
+    <!-- ================= SIGN IN ================= -->
+    <section id="view-login" class="login" hidden>
+      <div class="login-hero">
+        <span class="brand"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span>Dispatch<small>Site delivery</small></span></span>
+        <div>
+          <h1>Every site. One send.</h1>
+          <div class="rule" aria-hidden="true"></div>
+          <p>Pick your websites, drop in the file, press Deploy. Dispatch delivers it to every site and shows you each one going live.</p>
+        </div>
+        <footer>Private console &middot; owner and assistant only</footer>
+      </div>
+      <div class="login-side">
+        <form class="login-card" id="form-login" novalidate>
+          <span class="brand"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span>Dispatch</span></span>
+          <h2>Sign in</h2>
+          <p class="lead">Use the name and password you were given.</p>
+          <div class="login-err" id="login-err" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span id="login-err-msg"></span>
+          </div>
+          <div class="field">
+            <label for="login-user">Username</label>
+            <input class="input" id="login-user" name="username" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="login-pass">Password</label>
+            <input class="input" id="login-pass" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="btn btn-primary btn-lg" type="submit" id="btn-login" style="width:100%">
+            <svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>
+            <span class="btn-label">Sign in</span>
+          </button>
+          <div class="demo-hint" id="demo-hint" hidden>
+            <b>Demo mode is on.</b><br>
+            Owner account: <b>owner</b> / <b>demo</b><br>
+            Assistant account: <b>maria</b> / <b>demo</b>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ================= WORKSPACE ================= -->
+    <section id="view-main" class="view" hidden>
+      <header class="pagehead">
+        <span class="kicker accent">Workspace</span>
+        <h1>Deliver an update.</h1>
+        <p class="sub">Choose the websites, add the file, press Deploy. Each site reports back as it goes live.</p>
+      </header>
+      <div class="workspace">
+
+        <div class="panel ws-sites">
+          <div class="panel-head">
+            <div>
+              <span class="kicker">Step one</span>
+              <h2>Websites</h2>
+            </div>
+            <div class="row">
+              <span class="faint mono" id="sel-count" aria-live="polite"></span>
+              <label class="check" style="min-height:auto">
+                <input type="checkbox" id="select-all">
+                <span class="box"><svg class="icon sm" aria-hidden="true"><use href="#i-check"/></svg></span>
+                <span class="muted" style="font-weight:640">Select all</span>
+              </label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <ul class="site-grid" id="site-grid"></ul>
+            <div class="empty" id="sites-empty" hidden>No websites yet.<br>The owner adds them under Settings &rarr; Websites.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="kicker">Step two</span>
+              <h2>The file</h2>
+            </div>
+          </div>
+          <div class="panel-body">
+            <button type="button" class="dropzone" id="dropzone">
+              <svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>
+              <b>Drop your file here</b>
+              <span>or press to browse your computer</span>
+            </button>
+            <input type="file" id="file-input" class="vh" aria-label="Choose a file to deploy" tabindex="-1">
+            <div class="filechip" id="filechip" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span style="min-width:0">
+                <span class="fname" id="file-name"></span><br>
+                <span class="fsize" id="file-size"></span>
+              </span>
+              <button type="button" class="btn btn-ghost btn-icon" id="btn-file-remove" aria-label="Remove file" title="Remove file">
+                <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+              </button>
+            </div>
+            <ul class="readiness" id="readiness">
+              <li id="ready-sites"><svg class="icon sm" aria-hidden="true"><use href="#i-check"/></svg><span></span></li>
+              <li id="ready-file"><svg class="icon sm" aria-hidden="true"><use href="#i-check"/></svg><span></span></li>
+            </ul>
+            <button type="button" class="btn btn-primary btn-lg" id="btn-deploy" style="width:100%" disabled>
+              <svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>
+              <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
+              <span class="btn-label" id="deploy-label">Deploy</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="kicker">Step three</span>
+              <h2>Delivery</h2>
+            </div>
+          </div>
+          <div class="panel-body" aria-live="polite">
+            <div id="batch-area">
+              <div class="empty">Nothing in flight.<br>When you press Deploy, every website reports its progress here.</div>
+            </div>
+            <hr class="divider">
+            <span class="kicker">Recent deliveries</span>
+            <ul class="recent-list" id="recent-list"></ul>
+            <div class="empty" id="recent-empty" hidden>Nothing sent yet.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section id="view-settings" class="view" hidden>
+      <header class="pagehead">
+        <span class="kicker accent">Owner</span>
+        <h1>Settings.</h1>
+        <p class="sub">Keys, websites, and the people who can sign in.</p>
+      </header>
+      <div class="settings">
+        <nav class="setnav" aria-label="Settings sections">
+          <button type="button" data-stab="keys"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg>Keys</button>
+          <button type="button" data-stab="sites"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>Websites</button>
+          <button type="button" data-stab="create"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>Create</button>
+          <button type="button" data-stab="people"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg>People</button>
+        </nav>
+        <div id="settings-pane" class="setpane"></div>
+      </div>
+    </section>
+
+    <!-- ================= KNOWLEDGE BASE ================= -->
+    <section id="view-kb" class="view" hidden>
+      <header class="pagehead">
+        <span class="kicker accent">Guide</span>
+        <h1>How everything works.</h1>
+        <p class="sub">Seven short chapters. Start at the top the first time; come back to any chapter when you need it.</p>
+      </header>
+      <div class="kb">
+        <nav class="kb-nav" aria-label="Chapters">
+          <ol id="kb-list"></ol>
+        </nav>
+        <article class="panel kb-read" id="kb-read"></article>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* ============================================================
+   DISPATCH client
+   1. constants + helpers      5. workspace (deploy flow)
+   2. mock API                 6. settings
+   3. api() transport          7. knowledge base
+   4. auth + shell             8. events + init
+   ============================================================ */
+
+/* ---------- 1. constants + helpers ---------- */
+const BASE='';
+const MOCK=true; /* set to false when the real server is behind BASE */
+
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon=(n,cls)=>'<svg class="icon '+(cls||'')+'" aria-hidden="true"><use href="#i-'+n+'"/></svg>';
+function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return (b/1024).toFixed(1)+' KB';return (b/1048576).toFixed(1)+' MB'}
+function rel(t){const d=Date.now()-t;const m=Math.round(d/60000);if(m<1)return 'just now';if(m<60)return m+' min ago';
+  const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const dd=Math.round(h/24);return dd+(dd===1?' day ago':' days ago')}
+function toast(msg,kind){const t=document.createElement('div');t.className='toast '+(kind||'');
+  t.innerHTML=icon(kind==='err'?'alert':(kind==='ok'?'check':'info'))+'<span>'+esc(msg)+'</span>';
+  $('#toasts').appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),320)},4200)}
+function setLoading(btn,on){if(!btn)return;btn.classList.toggle('is-loading',!!on);if(on)btn.setAttribute('aria-busy','true');else btn.removeAttribute('aria-busy')}
+
+const App={
+  session:sessionStorage.getItem('dispatch.session')||null,
+  me:null, state:null,
+  selected:new Set(), file:null,
+  batch:null, pollTimer:null,
+  view:'main', settingsTab:'keys', kbChapter:'update',
+  discover:{repos:null,apps:null}
+};
+
+/* ---------- 2. MOCK API (offline click-through) ---------- */
+const MOCK_API=(()=>{
+  const now=Date.now();
+  const db={
+    pw:{owner:'demo', maria:'demo'},
+    users:[{username:'owner',role:'owner'},{username:'maria',role:'va'}],
+    accounts:{
+      github:[{id:'gh1',account:'gh1',login:'harborlight-studio'}],
+      heroku:[{id:'hk1',account:'hk1',email:'studio@harborlight.dev'}]
+    },
+    sites:[
+      {id:'101',label:'northgate-supply.com', url:'https://northgate-supply.com', owner:'harborlight-studio',repo:'northgate-supply', branch:'main',dir:'public/', app:'northgate-supply', app_url:'https://northgate-supply.herokuapp.com'},
+      {id:'102',label:'brightleaf.co',        url:'https://brightleaf.co',        owner:'harborlight-studio',repo:'brightleaf',      branch:'main',dir:'public/', app:'brightleaf-web',   app_url:'https://brightleaf-web.herokuapp.com'},
+      {id:'103',label:'harbourpoint.net',     url:'https://harbourpoint.net',     owner:'harborlight-studio',repo:'harbourpoint',    branch:'main',dir:'site/',   app:null,               app_url:null},
+      {id:'104',label:'clearwater-labs.com',  url:'https://clearwater-labs.com',  owner:'harborlight-studio',repo:'clearwater-labs', branch:'main',dir:'public/', app:'clearwater-labs',  app_url:'https://clearwater-labs.herokuapp.com'},
+      {id:'105',label:'summit-tools.com',     url:'https://summit-tools.com',     owner:'harborlight-studio',repo:'summit-tools',    branch:'main',dir:'dist/',   app:'summit-tools',     app_url:'https://summit-tools.herokuapp.com'}
+    ],
+    repos:[
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'northgate-supply',full_name:'harborlight-studio/northgate-supply',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'brightleaf',full_name:'harborlight-studio/brightleaf',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'harbourpoint',full_name:'harborlight-studio/harbourpoint',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'clearwater-labs',full_name:'harborlight-studio/clearwater-labs',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'summit-tools',full_name:'harborlight-studio/summit-tools',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'fernway-studio',full_name:'harborlight-studio/fernway-studio',branch:'main',private:true},
+      {conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:'lakeside-diner',full_name:'harborlight-studio/lakeside-diner',branch:'main',private:false}
+    ],
+    apps:[
+      {conn_id:'hk1',account:'hk1',name:'northgate-supply',web_url:'https://northgate-supply.herokuapp.com'},
+      {conn_id:'hk1',account:'hk1',name:'brightleaf-web',web_url:'https://brightleaf-web.herokuapp.com'},
+      {conn_id:'hk1',account:'hk1',name:'clearwater-labs',web_url:'https://clearwater-labs.herokuapp.com'},
+      {conn_id:'hk1',account:'hk1',name:'summit-tools',web_url:'https://summit-tools.herokuapp.com'},
+      {conn_id:'hk1',account:'hk1',name:'fernway-studio',web_url:'https://fernway-studio.herokuapp.com'}
+    ],
+    recent:[
+      {id:'b90',at:now-2*86400000,who:'maria',file:'summer-banner.jpg',sites:3,ok:3,failed:0},
+      {id:'b89',at:now-6*86400000,who:'owner',file:'index.html',sites:5,ok:4,failed:1}
+    ],
+    batches:{}, nextSite:106, nextBatch:91
+  };
+  const delay=v=>new Promise(r=>setTimeout(()=>r(v),160+Math.random()*240));
+  function err(status,msg){const e=new Error(msg);e.status=status;throw e}
+  const TERMINAL=['live','failed','no_app','skipped'];
+
+  function route(path,opt){
+    const method=(opt.method||'GET').toUpperCase();
+    const isForm=opt.body instanceof FormData;
+    const body=isForm?opt.body:(opt.body?JSON.parse(opt.body):null);
+    let m;
+
+    if(path==='/api/login'&&method==='POST'){
+      const u=db.users.find(x=>x.username===String(body.username||'').trim());
+      if(!u||db.pw[u.username]!==body.password) err(401,'That username or password is not right.');
+      return {session:'mock-'+u.username+'-'+Math.random().toString(36).slice(2,8),role:u.role,username:u.username};
+    }
+    /* every other call needs a session */
+    const uname=((App.session||'').match(/^mock-([A-Za-z0-9_.-]+)-[a-z0-9]+$/)||[])[1];
+    const me=db.users.find(u=>u.username===uname);
+    if(!me) err(401,'Your session has ended. Please sign in again.');
+
+    if(path==='/api/logout'&&method==='POST') return {};
+
+    if(path==='/api/state'&&method==='GET'){
+      return JSON.parse(JSON.stringify({sites:db.sites,accounts:db.accounts,users:db.users,recent:db.recent.slice(0,8),me:{username:me.username,role:me.role}}));
+    }
+
+    if(path==='/api/deploy'&&method==='POST'){
+      const file=body.get('file'); const ids=JSON.parse(body.get('sites')).map(String);
+      const id='b'+(db.nextBatch++); const t0=Date.now();
+      const targets=ids.map((sid,i)=>{
+        const s=db.sites.find(x=>String(x.id)===sid); if(!s) err(400,'Unknown site '+sid);
+        return {site_id:String(s.id),label:s.label,url:s.url,app:s.app,
+          path:s.dir.replace(/\/?$/,'/')+file.name,
+          build_url:s.app?'https://dashboard.heroku.com/apps/'+s.app+'/activity':null,
+          tCommit:t0+900+i*380, tBuild:t0+3600+i*1150,
+          fail:s.label==='clearwater-labs.com'};
+      });
+      db.batches[id]={batch:id,at:t0,who:me.username,file:file.name,targets,undone:false,recorded:false};
+      return {batch:id,targets:targets.map(t=>({site_id:t.site_id,label:t.label,status:'committing'}))};
+    }
+
+    if((m=path.match(/^\/api\/batch\/([\w-]+)$/))&&method==='GET'){
+      const b=db.batches[m[1]]; if(!b) err(404,'No such delivery.');
+      const t=Date.now();
+      const targets=b.targets.map(x=>{
+        let status,detail='';
+        if(t<x.tCommit){status='committing'}
+        else if(!x.app){status='no_app';detail='Saved to GitHub. No app is linked, so nothing was rebuilt.'}
+        else if(t<x.tBuild){status='building'}
+        else if(x.fail){status='failed';detail='Heroku build failed (npm install exited with code 1). The previous version is still live.'}
+        else{status='live'}
+        return {site_id:x.site_id,label:x.label,url:x.url,status,detail,path:x.path,build_url:x.app?x.build_url:null};
+      });
+      const done=targets.every(x=>TERMINAL.includes(x.status));
+      if(done&&!b.recorded){b.recorded=true;
+        db.recent.unshift({id:b.batch,at:b.at,who:b.who,file:b.file,sites:targets.length,
+          ok:targets.filter(x=>x.status==='live'||x.status==='no_app').length,
+          failed:targets.filter(x=>x.status==='failed').length});}
+      return {batch:b.batch,done,undone:b.undone,targets};
+    }
+
+    if((m=path.match(/^\/api\/undo\/([\w-]+)$/))&&method==='POST'){
+      const b=db.batches[m[1]]; if(!b) err(404,'No such delivery.'); b.undone=true; return {batch:b.batch};
+    }
+
+    if(path==='/api/token'&&method==='POST'){
+      if(!body.token||body.token.length<8) err(400,'That key looks too short. Paste the whole key.');
+      if(body.kind==='github') return {account:'harborlight-studio',kind:'github'};
+      return {account:'studio@harborlight.dev',kind:'heroku'};
+    }
+    if(path==='/api/discover/repos'&&method==='GET') return {repos:JSON.parse(JSON.stringify(db.repos))};
+    if(path==='/api/discover/apps'&&method==='GET')  return {apps:JSON.parse(JSON.stringify(db.apps))};
+
+    if(path==='/api/site'&&method==='POST'){
+      const id=String(db.nextSite++);
+      db.sites.push({id,label:body.label,url:body.url,owner:body.owner,repo:body.repo,branch:body.branch||'main',
+        dir:body.dir||'public/',app:null,app_url:null});
+      return {id};
+    }
+    if((m=path.match(/^\/api\/site\/([\w-]+)$/))){
+      const s=db.sites.find(x=>String(x.id)===String(m[1])); if(!s) err(404,'No such website.');
+      if(method==='PATCH'){['label','url','dir','branch'].forEach(k=>{if(body[k]!==undefined)s[k]=body[k]});return {id:s.id}}
+      if(method==='DELETE'){db.sites=db.sites.filter(x=>String(x.id)!==String(m[1]));return {}}
+    }
+    if(path==='/api/repo/create'&&method==='POST'){
+      if(!/^[A-Za-z0-9._-]+$/.test(body.name||'')) err(400,'Repo names can only use letters, numbers, dots and dashes.');
+      db.repos.push({conn_id:'gh1',account:'gh1',owner:'harborlight-studio',repo:body.name,
+        full_name:'harborlight-studio/'+body.name,branch:'main',private:!!body.private});
+      return {};
+    }
+    if(path==='/api/app/create'&&method==='POST'){
+      if(!/^[a-z0-9-]+$/.test(body.name||'')) err(400,'App names can only use lower-case letters, numbers and dashes.');
+      db.apps.push({conn_id:'hk1',account:'hk1',name:body.name,web_url:'https://'+body.name+'.herokuapp.com'});
+      return {};
+    }
+    if(path==='/api/link'&&method==='POST'){
+      const s=db.sites.find(x=>String(x.id)===String(body.site_id)); if(!s) err(404,'No such website.');
+      s.app=body.app||null;
+      s.app_url=body.app?('https://'+body.app+'.herokuapp.com'):null;
+      return {};
+    }
+    if(path==='/api/user'&&method==='POST'){
+      if(db.users.some(u=>u.username===body.username)) err(400,'That username is already taken.');
+      db.users.push({username:body.username,role:body.role||'va'}); db.pw[body.username]=body.password; return {};
+    }
+    if((m=path.match(/^\/api\/user\/([\w.-]+)$/))&&method==='DELETE'){
+      if(m[1]===me.username) err(400,'You cannot remove yourself.');
+      db.users=db.users.filter(u=>u.username!==m[1]); delete db.pw[m[1]]; return {};
+    }
+    if(path==='/api/password'&&method==='POST'){
+      if(db.pw[me.username]!==body.old) err(400,'The current password is not right.');
+      db.pw[me.username]=body.new; return {};
+    }
+    err(404,'Unknown request: '+method+' '+path);
+  }
+  return {fetch:(p,o)=>delay().then(()=>route(p,o||{}))};
+})();
+
+/* ---------- 3. api() transport ---------- */
+async function api(path,opt={}){
+  try{
+    if(!(opt.body instanceof FormData)&&opt.body&&typeof opt.body!=='string'){opt=Object.assign({},opt,{body:JSON.stringify(opt.body)})}
+    if(MOCK) return await MOCK_API.fetch(path,opt);
+    const headers=Object.assign({},opt.headers);
+    if(App.session) headers['Authorization']='Bearer '+App.session;
+    if(typeof opt.body==='string') headers['Content-Type']='application/json';
+    const res=await fetch(BASE+path,{method:opt.method||'GET',headers,body:opt.body});
+    if(res.status===401){const e=new Error('Signed out');e.status=401;throw e}
+    if(!res.ok){const j=await res.json().catch(()=>({}));const e=new Error(j.error||'Something went wrong ('+res.status+')');e.status=res.status;throw e}
+    return await res.json();
+  }catch(e){
+    if(e&&e.status===401){signOut(true)}
+    throw e;
+  }
+}
+
+/* ---------- 4. auth + shell ---------- */
+function showView(name){
+  App.view=name;
+  $('#view-login').hidden = name!=='login';
+  $('#view-main').hidden = name!=='main';
+  $('#view-settings').hidden = name!=='settings';
+  $('#view-kb').hidden = name!=='kb';
+  $('#topbar').hidden = name==='login';
+  $$('.topnav [data-nav]').forEach(b=>{
+    if(b.dataset.nav===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  window.scrollTo(0,0);
+}
+function signOut(expired){
+  if(App.session&&!expired){const s=App.session;App.session=null;MOCK||fetch(BASE+'/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+s}}).catch(()=>{})}
+  App.session=null;App.me=null;App.state=null;App.selected.clear();App.file=null;stopPoll();App.batch=null;
+  sessionStorage.removeItem('dispatch.session');
+  $('#demo-hint').hidden=!MOCK;
+  const errBox=$('#login-err');
+  if(expired){errBox.hidden=false;$('#login-err-msg').textContent='Your session ended. Please sign in again.'}
+  showView('login');
+  $('#login-user').focus();
+}
+async function signIn(username,password){
+  const r=await api('/api/login',{method:'POST',body:{username,password}});
+  App.session=r.session; sessionStorage.setItem('dispatch.session',r.session);
+  await enterApp();
+}
+async function enterApp(){
+  const st=await api('/api/state');
+  App.state=st; App.me=st.me;
+  App.selected=new Set([...App.selected].filter(id=>st.sites.some(s=>String(s.id)===String(id))));
+  renderChip(); guardRole();
+  renderSites(); renderRecent(); renderKBChapter(App.kbChapter);
+  if(App.me.role==='owner') renderSettings();
+  showView(App.view==='login'?'main':App.view);
+}
+async function loadState(){
+  const st=await api('/api/state');
+  App.state=st;App.me=st.me;
+  App.selected=new Set([...App.selected].filter(id=>st.sites.some(s=>String(s.id)===String(id))));
+  renderChip();renderSites();renderRecent();
+  if(App.me.role==='owner')renderSettings();
+}
+function renderChip(){
+  $('#chip-name').textContent=App.me.username;
+  $('#chip-role').textContent=App.me.role==='owner'?'Owner':'Assistant';
+  $('#chip-avatar').textContent=App.me.username.slice(0,1);
+}
+function guardRole(){
+  const owner=App.me.role==='owner';
+  $('#nav-settings').hidden=!owner;
+  if(!owner&&App.view==='settings')App.view='main';
+}
+
+/* ---------- 5. workspace ---------- */
+function renderSites(){
+  const sites=App.state.sites;
+  $('#sites-empty').hidden=sites.length>0;
+  $('#site-grid').innerHTML=sites.map(s=>{
+    const id=String(s.id); const sel=App.selected.has(id);
+    return '<li class="site-card">'+
+      '<label>'+
+        '<input type="checkbox" data-site="'+esc(id)+'" '+(sel?'checked':'')+' aria-label="Select '+esc(s.label)+'">'+
+        '<span class="card">'+
+          '<span class="tick">'+icon('check','sm')+'</span>'+
+          '<span class="site-domain">'+esc(s.label)+'</span>'+
+          '<span class="site-meta">'+
+            '<span>'+icon('folder','sm')+esc(s.dir)+'</span>'+
+            (s.app
+              ?'<span class="linked">'+icon('server','sm')+'App linked</span>'
+              :'<span class="unlinked">'+icon('server','sm')+'No app</span>')+
+          '</span>'+
+        '</span>'+
+      '</label>'+
+    '</li>';
+  }).join('');
+  syncSelectionUI();
+}
+function syncSelectionUI(){
+  const n=App.selected.size, total=App.state?App.state.sites.length:0;
+  $('#sel-count').textContent=n?n+' of '+total+' selected':'';
+  const all=$('#select-all');
+  all.checked=n>0&&n===total; all.indeterminate=n>0&&n<total;
+  updateDeploy();
+}
+function updateDeploy(){
+  const n=App.selected.size, hasFile=!!App.file;
+  const btn=$('#btn-deploy');
+  btn.disabled=!(n>0&&hasFile);
+  $('#deploy-label').textContent=n>0?('Deploy to '+n+(n===1?' website':' websites')):'Deploy';
+  const rs=$('#ready-sites'), rf=$('#ready-file');
+  rs.classList.toggle('done',n>0);
+  rs.querySelector('span').textContent=n>0?(n+(n===1?' website chosen':' websites chosen')):'Choose at least one website';
+  rf.classList.toggle('done',hasFile);
+  rf.querySelector('span').textContent=hasFile?('File ready: '+App.file.name):'Add the file to send';
+}
+function setFile(f){
+  App.file=f||null;
+  $('#filechip').hidden=!f;
+  $('#dropzone').hidden=!!f;
+  if(f){$('#file-name').textContent=f.name;$('#file-size').textContent=fmtSize(f.size)}
+  updateDeploy();
+}
+
+const STATUS_META={
+  committing:{label:'Saving to GitHub',cls:'busy',spin:true},
+  building:{label:'Rebuilding',cls:'busy',spin:true},
+  live:{label:'Live',cls:'ok',ic:'check'},
+  failed:{label:'Failed',cls:'bad',ic:'alert'},
+  no_app:{label:'Saved (no app)',cls:'dim',ic:'check'},
+  skipped:{label:'Skipped',cls:'dim',ic:'x'}
+};
+function pill(status){
+  const m=STATUS_META[status]||{label:status,cls:'dim',ic:'info'};
+  const ic=m.spin?'<svg class="icon rotating" aria-hidden="true" style="width:14px;height:14px"><use href="#i-loader"/></svg>':icon(m.ic||'info');
+  return '<span class="pill '+m.cls+'">'+ic+esc(m.label)+'</span>';
+}
+function batchSummary(ts){
+  const c={live:0,failed:0,saved:0,skipped:0};
+  ts.forEach(t=>{if(t.status==='live')c.live++;else if(t.status==='failed')c.failed++;
+    else if(t.status==='no_app')c.saved++;else if(t.status==='skipped')c.skipped++});
+  const parts=[];
+  if(c.live)parts.push(c.live+' live');
+  if(c.failed)parts.push(c.failed+' failed');
+  if(c.saved)parts.push(c.saved+' saved');
+  if(c.skipped)parts.push(c.skipped+' skipped');
+  return parts.join(', ');
+}
+function renderBatch(b){
+  const area=$('#batch-area');
+  if(!b){area.innerHTML='<div class="empty">Nothing in flight.<br>When you press Deploy, every website reports its progress here.</div>';return}
+  let html='<div class="batch-file">'+icon('file','sm')+'<span>Sending <b>'+esc(b.file)+'</b> to '+b.targets.length+(b.targets.length===1?' website':' websites')+'</span></div>';
+  html+='<ul class="target-list">'+b.targets.map(t=>{
+    let detail='';
+    if(t.detail)detail='<div class="t-detail'+(t.status==='failed'?' err':'')+'">'+esc(t.detail)+'</div>';
+    else if(t.status==='live')detail='<div class="t-detail">Updated '+esc(t.path||'')+(t.url?' &middot; <a href="'+esc(t.url)+'" target="_blank" rel="noopener">open site '+icon('ext','sm')+'</a>':'')+'</div>';
+    return '<li><span class="t-main"><span class="t-domain">'+esc(t.label)+'</span>'+detail+'</span>'+pill(t.status)+'</li>';
+  }).join('')+'</ul>';
+  if(b.done){
+    if(b.undone){
+      html+='<div class="undone-note">'+icon('undo')+'<span>This delivery was undone. Each website is restoring its previous version.</span></div>';
+    }else{
+      html+='<div class="batch-summary"><span class="sumline">'+esc(batchSummary(b.targets))+'</span>'+
+        '<button type="button" class="btn btn-secondary" id="btn-undo">'+
+        '<svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('undo')+
+        '<span class="btn-label">Undo this delivery</span></button></div>';
+    }
+  }
+  area.innerHTML=html;
+}
+function stopPoll(){if(App.pollTimer){clearInterval(App.pollTimer);App.pollTimer=null}}
+function startPoll(id){
+  stopPoll();
+  const tick=async()=>{
+    try{
+      const b=await api('/api/batch/'+id);
+      App.batch=b; renderBatch(b);
+      if(b.done){stopPoll(); loadState().catch(()=>{})}
+    }catch(e){stopPoll(); toast(e.message,'err')}
+  };
+  tick(); App.pollTimer=setInterval(tick,850);
+}
+async function doDeploy(){
+  const btn=$('#btn-deploy'); setLoading(btn,true);
+  try{
+    const fd=new FormData();
+    fd.append('file',App.file);
+    fd.append('sites',JSON.stringify([...App.selected].map(String)));
+    fd.append('mode','auto');
+    const r=await api('/api/deploy',{method:'POST',body:fd});
+    setFile(null);
+    startPoll(r.batch);
+  }catch(e){toast(e.message,'err')}
+  finally{setLoading(btn,false)}
+}
+async function doUndo(){
+  const btn=$('#btn-undo'); setLoading(btn,true);
+  try{
+    await api('/api/undo/'+App.batch.batch,{method:'POST'});
+    App.batch.undone=true; renderBatch(App.batch);
+    toast('Delivery undone. Previous versions are being restored.','ok');
+  }catch(e){setLoading(btn,false);toast(e.message,'err')}
+}
+function renderRecent(){
+  const r=App.state.recent||[];
+  $('#recent-empty').hidden=r.length>0;
+  $('#recent-list').innerHTML=r.map(x=>{
+    const bits=[]; if(x.ok)bits.push(x.ok+' ok'); if(x.failed)bits.push(x.failed+' failed');
+    return '<li><span class="r-file">'+esc(x.file)+'</span>'+
+      '<span class="r-meta">'+x.sites+(x.sites===1?' site':' sites')+' &middot; '+bits.join(', ')+' &middot; by '+esc(x.who)+'</span>'+
+      '<span class="r-when">'+esc(rel(x.at))+'</span></li>';
+  }).join('');
+}
+
+/* ---------- 6. settings ---------- */
+function renderSettings(){
+  $$('.setnav [data-stab]').forEach(b=>{
+    if(b.dataset.stab===App.settingsTab)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
+  const pane=$('#settings-pane');
+  pane.classList.toggle('two-up',App.settingsTab==='keys'||App.settingsTab==='create');
+  if(App.settingsTab==='keys')return renderKeys(pane);
+  if(App.settingsTab==='sites')return renderSitesTab(pane);
+  if(App.settingsTab==='create')return renderCreate(pane);
+  if(App.settingsTab==='people')return renderPeople(pane);
+}
+function renderKeys(pane){
+  const gh=App.state.accounts.github, hk=App.state.accounts.heroku;
+  pane.innerHTML=
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">GitHub</span><h2>Where files are saved</h2></div></div>'+
+  '<div class="panel-body">'+
+    (gh.length?gh.map(a=>'<div class="conn-row">'+icon('branch')+'<span>Connected as <b>'+esc(a.login)+'</b></span><span class="pill ok" style="margin-left:auto">'+icon('check')+'Working</span></div>').join(''):
+      '<div class="empty">No GitHub account connected yet.</div>')+
+    '<hr class="divider">'+
+    '<form data-form="token-github"><div class="field"><label for="gh-token">Paste a GitHub token</label>'+
+    '<input class="input" id="gh-token" name="token" autocomplete="off" required placeholder="ghp_&hellip;"></div>'+
+    '<button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('key')+'<span class="btn-label">Save token</span></button></form>'+
+  '</div></div>'+
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">Heroku</span><h2>Where sites are rebuilt</h2></div></div>'+
+  '<div class="panel-body">'+
+    (hk.length?hk.map(a=>'<div class="conn-row">'+icon('server')+'<span>Connected as <b>'+esc(a.email)+'</b></span><span class="pill ok" style="margin-left:auto">'+icon('check')+'Working</span></div>').join(''):
+      '<div class="empty">No Heroku account connected yet.</div>')+
+    '<hr class="divider">'+
+    '<form data-form="token-heroku"><div class="field"><label for="hk-token">Paste a Heroku API key</label>'+
+    '<input class="input" id="hk-token" name="token" autocomplete="off" required placeholder="HRKU-&hellip;"></div>'+
+    '<button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('key')+'<span class="btn-label">Save key</span></button></form>'+
+  '</div></div>';
+}
+function appOptions(current){
+  const apps=(App.discover.apps&&App.discover.apps.apps)||[];
+  let html='<option value="">No app (save to GitHub only)</option>';
+  apps.forEach(a=>{html+='<option value="'+esc(a.name)+'"'+(a.name===current?' selected':'')+'>'+esc(a.name)+'</option>'});
+  if(current&&!apps.some(a=>a.name===current))html+='<option value="'+esc(current)+'" selected>'+esc(current)+'</option>';
+  return html;
+}
+function renderSitesTab(pane){
+  const sites=App.state.sites;
+  pane.innerHTML=
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">Connected</span><h2>Your websites</h2></div></div>'+
+  '<div class="panel-body" id="site-admin-list">'+
+    (sites.length?sites.map(s=>{
+      const id=esc(String(s.id));
+      return '<div class="siterow" data-siterow="'+id+'">'+
+        '<div class="siterow-top"><span class="dom">'+esc(s.label)+'</span>'+
+          (s.app?'<span class="pill ok">'+icon('server','sm')+esc(s.app)+'</span>':'<span class="pill dim">'+icon('server','sm')+'No app</span>')+
+          '<span class="actions">'+
+            '<button type="button" class="btn btn-ghost" data-act="edit-site" data-id="'+id+'">'+icon('pencil')+'Edit</button>'+
+            '<button type="button" class="btn btn-danger" data-act="remove-site" data-id="'+id+'">'+icon('trash')+'<span class="btn-label">Remove</span></button>'+
+          '</span></div>'+
+        '<div class="meta"><span>'+icon('branch','sm')+esc(s.owner+'/'+s.repo)+' &middot; '+esc(s.branch)+'</span>'+
+        '<span>'+icon('folder','sm')+esc(s.dir)+'</span></div>'+
+        '<div class="editbox" data-editbox="'+id+'" hidden></div>'+
+      '</div>';
+    }).join(''):'<div class="empty">No websites yet. Add one from your repos below.</div>')+
+  '</div></div>'+
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">Add</span><h2>Add a website from your repos</h2></div>'+
+    '<button type="button" class="btn btn-secondary" data-act="load-repos"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('branch')+'<span class="btn-label">Show my repos</span></button></div>'+
+  '<div class="panel-body" id="repo-pane"><div class="empty">Press &ldquo;Show my repos&rdquo; to list the repos on your connected GitHub account.</div></div></div>';
+  if(App.discover.repos)renderRepoList();
+}
+function renderRepoList(){
+  const pane=$('#repo-pane'); const data=App.discover.repos;
+  if(!data){pane.innerHTML='<div class="empty">Could not load repos.</div>';return}
+  const used=new Set(App.state.sites.map(s=>s.owner+'/'+s.repo));
+  pane.innerHTML='<ul class="repo-list">'+data.repos.map((r,i)=>{
+    const isUsed=used.has(r.full_name);
+    return '<li><span style="min-width:0"><span class="rname">'+esc(r.full_name)+'</span><br>'+
+      '<span class="rmeta">'+esc(r.branch)+(r.private?' &middot; private':' &middot; public')+'</span></span>'+
+      (isUsed?'<span class="pill dim" style="margin-left:auto">'+icon('check','sm')+'Already added</span>':
+        '<button type="button" class="btn btn-secondary" data-act="pick-repo" data-idx="'+i+'">'+icon('plus')+'Add</button>')+
+      '</li>'+
+      '<li class="addform" data-addform="'+i+'" hidden style="border-bottom:1px solid var(--line)"></li>';
+  }).join('')+'</ul>';
+}
+function openAddForm(idx){
+  const r=App.discover.repos.repos[idx];
+  $$('#repo-pane .addform').forEach(el=>{el.hidden=true;el.innerHTML=''});
+  const host=$('#repo-pane [data-addform="'+idx+'"]');
+  host.hidden=false;
+  host.innerHTML='<form class="editform" data-form="add-site" data-idx="'+idx+'" style="width:100%">'+
+    '<div class="field"><label>Domain name (shown to everyone)</label><input class="input" name="label" required value="'+esc(r.repo)+'.com"></div>'+
+    '<div class="field"><label>Site address</label><input class="input" name="url" required value="https://'+esc(r.repo)+'.com"></div>'+
+    '<div class="field"><label>Folder the file lands in</label><input class="input" name="dir" required value="public/"></div>'+
+    '<div class="field"><label>Branch</label><input class="input" name="branch" required value="'+esc(r.branch)+'"></div>'+
+    '<div class="formfoot"><button type="button" class="btn btn-ghost" data-act="cancel-add" data-idx="'+idx+'">Cancel</button>'+
+    '<button type="submit" class="btn btn-primary"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg><span class="btn-label">Add website</span></button></div></form>';
+  host.querySelector('input').focus();
+}
+async function openEditForm(id){
+  const s=App.state.sites.find(x=>String(x.id)===String(id)); if(!s)return;
+  if(!App.discover.apps){try{App.discover.apps=await api('/api/discover/apps')}catch(e){App.discover.apps={apps:[]}}}
+  $$('#site-admin-list .editbox').forEach(el=>{el.hidden=true;el.innerHTML=''});
+  const box=$('#site-admin-list [data-editbox="'+esc(String(id))+'"]'); if(!box)return;
+  box.hidden=false;
+  box.innerHTML='<form class="editform" data-form="edit-site" data-id="'+esc(String(id))+'">'+
+    '<div class="field"><label>Domain name</label><input class="input" name="label" required value="'+esc(s.label)+'"></div>'+
+    '<div class="field"><label>Site address</label><input class="input" name="url" required value="'+esc(s.url)+'"></div>'+
+    '<div class="field"><label>Folder</label><input class="input" name="dir" required value="'+esc(s.dir)+'"></div>'+
+    '<div class="field"><label>Branch</label><input class="input" name="branch" required value="'+esc(s.branch)+'"></div>'+
+    '<div class="field" style="grid-column:1 / -1"><label>Heroku app</label><select class="input" name="app">'+appOptions(s.app)+'</select></div>'+
+    '<div class="formfoot"><button type="button" class="btn btn-ghost" data-act="cancel-edit">Cancel</button>'+
+    '<button type="submit" class="btn btn-primary"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg><span class="btn-label">Save changes</span></button></div></form>';
+  box.querySelector('input').focus();
+}
+function renderCreate(pane){
+  pane.innerHTML=
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">GitHub</span><h2>New repo</h2></div></div>'+
+  '<div class="panel-body"><p class="muted">A repo is the storage a website&rsquo;s files live in.</p>'+
+  '<form data-form="create-repo"><div class="field"><label for="new-repo">Repo name</label>'+
+  '<input class="input" id="new-repo" name="name" required placeholder="my-new-site" pattern="[A-Za-z0-9._-]+"></div>'+
+  '<label class="check"><input type="checkbox" name="private" checked><span class="box">'+icon('check','sm')+'</span><span class="muted" style="font-weight:640">Keep it private</span></label>'+
+  '<div style="margin-top:var(--s4)"><button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('plus')+'<span class="btn-label">Create repo</span></button></div></form></div></div>'+
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">Heroku</span><h2>New app</h2></div></div>'+
+  '<div class="panel-body"><p class="muted">An app is the machine that rebuilds and serves a website.</p>'+
+  '<form data-form="create-app"><div class="field"><label for="new-app">App name</label>'+
+  '<input class="input" id="new-app" name="name" required placeholder="my-new-site" pattern="[a-z0-9-]+"></div>'+
+  '<div><button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('plus')+'<span class="btn-label">Create app</span></button></div></form></div></div>';
+}
+function renderPeople(pane){
+  const users=App.state.users;
+  pane.innerHTML=
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">Access</span><h2>Who can sign in</h2></div></div>'+
+  '<div class="panel-body">'+
+    users.map(u=>'<div class="people-row">'+icon('user')+'<b>'+esc(u.username)+'</b>'+
+      '<span class="pill '+(u.role==='owner'?'busy':'dim')+'">'+esc(u.role==='owner'?'Owner':'Assistant')+'</span>'+
+      (u.username!==App.me.username?'<button type="button" class="btn btn-danger" data-act="remove-user" data-user="'+esc(u.username)+'">'+icon('trash')+'<span class="btn-label">Remove</span></button>':'<span class="faint" style="margin-left:auto;font-size:var(--fs--1)">you</span>')+
+      '</div>').join('')+
+    '<hr class="divider"><span class="kicker">Add a person</span>'+
+    '<form class="inline-form" data-form="add-user" style="margin-top:var(--s3)">'+
+      '<div class="field"><label for="nu-name">Username</label><input class="input" id="nu-name" name="username" required autocomplete="off"></div>'+
+      '<div class="field"><label for="nu-pass">Password</label><input class="input" id="nu-pass" name="password" type="password" required autocomplete="new-password"></div>'+
+      '<div class="field"><label for="nu-role">Role</label><select class="input" id="nu-role" name="role"><option value="va" selected>Assistant</option><option value="owner">Owner</option></select></div>'+
+      '<button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('plus')+'<span class="btn-label">Add</span></button>'+
+    '</form>'+
+  '</div></div>'+
+  '<div class="panel"><div class="panel-head"><div><span class="kicker">You</span><h2>Change your password</h2></div></div>'+
+  '<div class="panel-body"><form data-form="change-pass" style="max-width:420px">'+
+    '<div class="field"><label for="cp-old">Current password</label><input class="input" id="cp-old" name="old" type="password" required autocomplete="current-password"></div>'+
+    '<div class="field"><label for="cp-new">New password</label><input class="input" id="cp-new" name="new" type="password" required minlength="8" autocomplete="new-password"></div>'+
+    '<button class="btn btn-secondary" type="submit"><svg class="icon spin rotating" aria-hidden="true"><use href="#i-loader"/></svg>'+icon('key')+'<span class="btn-label">Change password</span></button>'+
+  '</form></div></div>';
+}
+
+/* ---------- 7. knowledge base ---------- */
+const KB=[
+ {id:'update',num:'01',title:'Update a website',owner:false,html:
+  '<p>This is the everyday job: send one file to one or more of your websites.</p>'+
+  '<ol class="steps">'+
+  '<li><b>Tick the websites</b> you want to update on the Workspace screen. Tick as many as you like, or use <b>Select all</b>.'+
+  '<!--KB_SCREENSHOT:main-select-sites--></li>'+
+  '<li><b>Add your file.</b> Drag it onto the dotted box, or press the box and pick it from your computer.'+
+  '<!--KB_SCREENSHOT:main-drop-file--></li>'+
+  '<li><b>Press Deploy.</b> The button tells you how many websites it will go to. It stays grey until you have chosen at least one website and a file.'+
+  '<!--KB_SCREENSHOT:main-deploy-button--></li>'+
+  '<li><b>Watch the Delivery panel.</b> Each website moves through <b>Saving to GitHub</b>, then <b>Rebuilding</b>, then <b>Live</b>.'+
+  '<!--KB_SCREENSHOT:main-deploy-progress--></li>'+
+  '</ol>'+
+  '<h3>Mixed results are normal</h3>'+
+  '<p>At the end you get one line, for example <b>&ldquo;3 live, 1 failed, 1 saved&rdquo;</b>. Live means done. Saved means the file is safely stored but that site has no app to rebuild. Failed means that one site kept its old version &mdash; see the chapter <b>If something goes wrong</b>.</p>'},
+ {id:'undo',num:'02',title:'Undo a mistake',owner:false,html:
+  '<p>Sent the wrong file? You can take back the whole delivery in one press.</p>'+
+  '<ol class="steps">'+
+  '<li>In the Delivery panel, after a delivery finishes, press <b>Undo this delivery</b>.'+
+  '<!--KB_SCREENSHOT:undo-button--></li>'+
+  '<li>Every website in that delivery puts back the version it had before, and rebuilds itself. This takes about as long as the delivery did.</li>'+
+  '</ol>'+
+  '<div class="kb-callout">'+icon('info')+'<span>Undo covers the <b>most recent</b> delivery. If you have sent two batches since the mistake, ask the owner for help instead of pressing Undo.</span></div>'},
+ {id:'words',num:'03',title:'What the words mean',owner:false,html:
+  '<p>You never need the technical detail, but these words appear on screen.</p>'+
+  '<dl>'+
+  '<dt>Deploy</dt><dd>Send the file out and make it live. The whole point of this panel.</dd>'+
+  '<dt>GitHub</dt><dd>The safe-deposit box where every website&rsquo;s files are stored. Every change is kept, which is why Undo works.</dd>'+
+  '<dt>Repo</dt><dd>One website&rsquo;s box inside GitHub.</dd>'+
+  '<dt>Heroku / app</dt><dd>The machine that takes the stored files and serves the live website. &ldquo;App linked&rdquo; on a card means that machine is connected.</dd>'+
+  '<dt>Rebuilding</dt><dd>The machine is putting the new file into the live site. A minute or two is normal.</dd>'+
+  '<dt>Live</dt><dd>Done. Visitors now see the new file.</dd>'+
+  '<dt>Saved (no app)</dt><dd>The file is stored in GitHub, but that website has no machine linked, so nothing was rebuilt. Not an error.</dd>'+
+  '<dt>Failed</dt><dd>That one website could not rebuild. It keeps showing its old version, so visitors never see anything broken.</dd>'+
+  '<dt>Batch / delivery</dt><dd>One press of Deploy: one file, to a set of websites, together.</dd>'+
+  '<dt>Domain</dt><dd>The website&rsquo;s public name, like <b>northgate-supply.com</b>.</dd>'+
+  '<dt>Folder</dt><dd>Where inside the website the file lands, like <b>public/</b>. Set once by the owner.</dd>'+
+  '</dl>'},
+ {id:'keys',num:'04',title:'Connect your keys',owner:true,html:
+  '<p>Keys let Dispatch act on your GitHub and Heroku accounts. You paste each key once; after that everyone just presses Deploy.</p>'+
+  '<ol class="steps">'+
+  '<li>On github.com go to <b>Settings &rarr; Developer settings &rarr; Personal access tokens</b>, make a token that can read and write your repos, and copy it.</li>'+
+  '<li>In Dispatch open <b>Settings &rarr; Keys</b> and paste it under GitHub. Dispatch shows which account it belongs to &mdash; check the name is yours.'+
+  '<!--KB_SCREENSHOT:settings-keys--></li>'+
+  '<li>On heroku.com go to <b>Account settings</b>, copy the <b>API key</b>, and paste it under Heroku the same way.</li>'+
+  '</ol>'+
+  '<div class="kb-callout">'+icon('alert')+'<span>Treat keys like the password to your bank. Never send one in chat or email. If a key leaks, delete it on GitHub or Heroku and paste a fresh one here.</span></div>'},
+ {id:'addsite',num:'05',title:'Add a website',owner:true,html:
+  '<p>Each website is one repo, one folder, and (usually) one Heroku app.</p>'+
+  '<ol class="steps">'+
+  '<li>Open <b>Settings &rarr; Websites</b> and press <b>Show my repos</b>. Dispatch lists every repo on your connected GitHub account.</li>'+
+  '<li>Press <b>Add</b> next to the repo. Give it the domain name people will recognise (for example <b>brightleaf.co</b>) and the folder files land in (usually <b>public/</b>).'+
+  '<!--KB_SCREENSHOT:settings-add-site--></li>'+
+  '<li>Press <b>Edit</b> on the new website and choose its <b>Heroku app</b> so it rebuilds after each deploy. A website with no app still receives files &mdash; they are just saved, not published.</li>'+
+  '</ol>'+
+  '<p>Need a brand-new site from nothing? Make the repo and app first under <b>Settings &rarr; Create</b>, then add the website the same way.</p>'},
+ {id:'addva',num:'06',title:'Add your VA',owner:true,html:
+  '<p>Your assistant gets their own sign-in. They can deploy files and undo a delivery, and nothing else &mdash; no keys, no settings, no adding people.</p>'+
+  '<ol class="steps">'+
+  '<li>Open <b>Settings &rarr; People</b>.</li>'+
+  '<li>Enter a username and a password, leave the role on <b>Assistant</b>, and press <b>Add</b>.'+
+  '<!--KB_SCREENSHOT:settings-people--></li>'+
+  '<li>Tell them the address of this panel and their sign-in. Ask them to read chapters 1, 2 and 3 of this guide.</li>'+
+  '</ol>'+
+  '<p>To take access away, press <b>Remove</b> next to their name &mdash; it works immediately. You can also change your own password on the same screen.</p>'},
+ {id:'wrong',num:'07',title:'If something goes wrong',owner:false,html:
+  '<h3>A website says Failed</h3>'+
+  '<p>Nothing is broken for visitors &mdash; a failed site keeps showing its old version. Read the reason under the site&rsquo;s name, wait a minute, then deploy the same file again ticking <b>only that site</b>. If it fails twice, tell the owner and include the reason text.</p>'+
+  '<h3>It says Saved (no app)</h3>'+
+  '<p>Not an error. The file is stored, but that website has no Heroku app linked. The owner can link one under Settings &rarr; Websites.</p>'+
+  '<h3>The Deploy button is grey</h3>'+
+  '<p>It needs both things: at least one website ticked <b>and</b> a file added. The checklist above the button shows which one is missing.</p>'+
+  '<h3>You were sent back to the sign-in screen</h3>'+
+  '<p>Your session ended &mdash; it happens after a long idle stretch. Sign in again and carry on; nothing you deployed is lost.</p>'+
+  '<h3>You sent the wrong file</h3>'+
+  '<p>Press <b>Undo this delivery</b> straight away &mdash; see chapter 02.</p>'+
+  '<!--KB_SCREENSHOT:troubleshooting-failed-row-->'+
+  '<div class="kb-callout">'+icon('info')+'<span>Golden rule: nothing in this panel can destroy a website. Old versions are always kept, and Undo exists. When in doubt, stop and ask &mdash; don&rsquo;t press Deploy repeatedly.</span></div>'}
+];
+function renderKBNav(){
+  $('#kb-list').innerHTML=KB.map(ch=>
+    '<li><button type="button" data-chapter="'+ch.id+'" '+(App.kbChapter===ch.id?'aria-current="true"':'')+'>'+
+    '<span class="num">'+ch.num+'</span><span>'+esc(ch.title)+'</span>'+
+    (ch.owner?'<span class="tag">Owner</span>':'')+
+    '</button></li>').join('');
+}
+function renderKBChapter(id){
+  const ch=KB.find(c=>c.id===id)||KB[0];
+  App.kbChapter=ch.id;
+  $('#kb-read').innerHTML=
+    '<div class="chapter-kicker">Chapter '+ch.num+(ch.owner?'<span class="tag">Owner only</span>':'')+'</div>'+
+    '<h2>'+esc(ch.title)+'</h2><div class="kb-prose">'+ch.html+'</div>';
+  renderKBNav();
+}
+
+/* ---------- 8. events + init ---------- */
+$('#form-login').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#btn-login'); setLoading(btn,true); $('#login-err').hidden=true;
+  try{await signIn($('#login-user').value.trim(),$('#login-pass').value)}
+  catch(err){$('#login-err').hidden=false;$('#login-err-msg').textContent=err.message}
+  finally{setLoading(btn,false)}
+});
+$('#btn-signout').addEventListener('click',()=>signOut(false));
+$$('.topnav [data-nav]').forEach(b=>b.addEventListener('click',()=>{
+  const v=b.dataset.nav;
+  if(v==='settings'&&(!App.me||App.me.role!=='owner'))return;
+  if(v==='settings')renderSettings();
+  showView(v);
+}));
+
+/* workspace */
+$('#site-grid').addEventListener('change',e=>{
+  const cb=e.target.closest('input[data-site]'); if(!cb)return;
+  const id=String(cb.dataset.site);
+  if(cb.checked)App.selected.add(id);else App.selected.delete(id);
+  syncSelectionUI();
+});
+$('#select-all').addEventListener('change',e=>{
+  if(e.target.checked)App.selected=new Set(App.state.sites.map(s=>String(s.id)));
+  else App.selected.clear();
+  renderSites();
+});
+$('#dropzone').addEventListener('click',()=>$('#file-input').click());
+$('#dropzone').addEventListener('dragover',e=>{e.preventDefault();$('#dropzone').classList.add('drag')});
+$('#dropzone').addEventListener('dragleave',()=>$('#dropzone').classList.remove('drag'));
+$('#dropzone').addEventListener('drop',e=>{
+  e.preventDefault();$('#dropzone').classList.remove('drag');
+  if(e.dataTransfer.files&&e.dataTransfer.files[0])setFile(e.dataTransfer.files[0]);
+});
+$('#file-input').addEventListener('change',e=>{if(e.target.files[0])setFile(e.target.files[0]);e.target.value=''});
+$('#btn-file-remove').addEventListener('click',()=>setFile(null));
+$('#btn-deploy').addEventListener('click',doDeploy);
+$('#batch-area').addEventListener('click',e=>{if(e.target.closest('#btn-undo'))doUndo()});
+
+/* settings — one delegated click + one delegated submit */
+$$('.setnav [data-stab]').forEach(b=>b.addEventListener('click',()=>{App.settingsTab=b.dataset.stab;renderSettings()}));
+function arm(btn,label){
+  btn.classList.add('armed');
+  const l=btn.querySelector('.btn-label'); const orig=l?l.textContent:'';
+  if(l)l.textContent=label;
+  setTimeout(()=>{if(document.contains(btn)){btn.classList.remove('armed');if(l)l.textContent=orig}},2600);
+}
+$('#settings-pane').addEventListener('click',async e=>{
+  const btn=e.target.closest('[data-act]'); if(!btn)return;
+  const act=btn.dataset.act;
+  try{
+    if(act==='edit-site'){await openEditForm(btn.dataset.id);return}
+    if(act==='cancel-edit'){const box=btn.closest('.editbox');if(box){box.hidden=true;box.innerHTML=''}return}
+    if(act==='remove-site'){
+      if(!btn.classList.contains('armed')){arm(btn,'Really remove?');return}
+      await api('/api/site/'+btn.dataset.id,{method:'DELETE'});
+      await loadState(); toast('Website removed.','ok'); return;
+    }
+    if(act==='load-repos'){
+      setLoading(btn,true);
+      try{App.discover.repos=await api('/api/discover/repos');renderRepoList()}
+      finally{setLoading(btn,false)}
+      return;
+    }
+    if(act==='pick-repo'){openAddForm(+btn.dataset.idx);return}
+    if(act==='cancel-add'){const host=$('#repo-pane [data-addform="'+btn.dataset.idx+'"]');if(host){host.hidden=true;host.innerHTML=''}return}
+    if(act==='remove-user'){
+      if(!btn.classList.contains('armed')){arm(btn,'Really remove?');return}
+      await api('/api/user/'+btn.dataset.user,{method:'DELETE'});
+      await loadState(); toast('Access removed.','ok'); return;
+    }
+  }catch(err){toast(err.message,'err')}
+});
+$('#settings-pane').addEventListener('submit',async e=>{
+  const form=e.target.closest('form[data-form]'); if(!form)return;
+  e.preventDefault();
+  const kind=form.dataset.form;
+  const btn=form.querySelector('button[type="submit"]');
+  const data=Object.fromEntries(new FormData(form).entries());
+  setLoading(btn,true);
+  try{
+    if(kind==='token-github'||kind==='token-heroku'){
+      const k=kind==='token-github'?'github':'heroku';
+      const r=await api('/api/token',{method:'POST',body:{kind:k,token:data.token}});
+      await loadState(); toast('Key saved. Connected as '+r.account+'.','ok');
+    }else if(kind==='add-site'){
+      const repo=App.discover.repos.repos[+form.dataset.idx];
+      await api('/api/site',{method:'POST',body:{conn_id:repo.conn_id,owner:repo.owner,repo:repo.repo,
+        branch:data.branch,dir:data.dir,label:data.label,url:data.url}});
+      await loadState(); toast('Website added: '+data.label,'ok');
+    }else if(kind==='edit-site'){
+      const id=String(form.dataset.id);
+      const s=App.state.sites.find(x=>String(x.id)===id);
+      await api('/api/site/'+id,{method:'PATCH',body:{label:data.label,url:data.url,dir:data.dir,branch:data.branch}});
+      const newApp=data.app||null;
+      if(s&&(s.app||null)!==newApp) await api('/api/link',{method:'POST',body:{site_id:id,app:newApp}});
+      await loadState(); toast('Saved.','ok');
+    }else if(kind==='create-repo'){
+      await api('/api/repo/create',{method:'POST',body:{name:data.name,private:!!data.private}});
+      toast('Repo created: '+data.name,'ok'); App.discover.repos=null; form.reset();
+    }else if(kind==='create-app'){
+      await api('/api/app/create',{method:'POST',body:{name:data.name}});
+      toast('App created: '+data.name,'ok'); App.discover.apps=null; form.reset();
+    }else if(kind==='add-user'){
+      await api('/api/user',{method:'POST',body:{username:data.username.trim(),password:data.password,role:data.role}});
+      await loadState(); toast('Added '+data.username.trim()+'.','ok');
+    }else if(kind==='change-pass'){
+      await api('/api/password',{method:'POST',body:{old:data.old,'new':data['new']}});
+      toast('Password changed.','ok'); form.reset();
+    }
+  }catch(err){toast(err.message,'err')}
+  setLoading(btn,false);
+});
+
+/* knowledge base */
+$('#kb-list').addEventListener('click',e=>{
+  const b=e.target.closest('[data-chapter]'); if(!b)return;
+  renderKBChapter(b.dataset.chapter);
+});
+
+/* init */
+(async function init(){
+  $('#demo-hint').hidden=!MOCK;
+  if(App.session){
+    try{await enterApp();return}
+    catch(e){/* 401 already routed to sign-in by api(); anything else falls through */}
+  }
+  showView('login');
+})();
+</script>
+</body>
+</html>

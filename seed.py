@@ -23,6 +23,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WRANGLER_CFG = os.path.join(HERE, "worker", "wrangler.json")
 CF = "/root/.config/cloudflare/osanix-fleetview.json"
 
+def db_name():
+    """Read the database name from wrangler.json rather than hardcoding it —
+    a hardcoded name silently wrote to the OLD database after a region move."""
+    d = json.load(open(WRANGLER_CFG))
+    return d["d1_databases"][0]["database_name"]
+
 
 def cf_env():
     c = json.load(open(CF))
@@ -46,7 +52,7 @@ def d1_write(sql):
     try:
         with os.fdopen(fd, "w") as f:
             f.write(sql)
-        _run(["wrangler", "d1", "execute", "deploy_bot", "--remote",
+        _run(["wrangler", "d1", "execute", db_name(), "--remote",
               "--config", WRANGLER_CFG, "--file", path, "-y"])
     finally:
         os.unlink(path)
@@ -56,7 +62,7 @@ def d1_read(sql):
     """Reads MUST use --command. Wrangler's --file mode returns only a summary
     ("Total queries executed"), never the selected rows, which reads exactly
     like an empty table."""
-    out = _run(["wrangler", "d1", "execute", "deploy_bot", "--remote",
+    out = _run(["wrangler", "d1", "execute", db_name(), "--remote",
                 "--config", WRANGLER_CFG, "--command", sql, "--json"])
     i = out.find("[")  # wrangler prints progress lines before the JSON
     if i < 0:
