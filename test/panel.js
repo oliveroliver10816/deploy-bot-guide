@@ -217,6 +217,30 @@ console.log("\n── build polling ──");
   ok(/compiler error/.test(st.body.targets[0].detail || ""), "failure carries the build log tail");
 }
 
+console.log("\n── on-read build refresh (no cron) ──");
+{
+  const h = newEnv({ buildStatus: "succeeded" });
+  const { m, s1 } = await setup(h);
+  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
+  // deliberately do NOT run worker.scheduled — reading the batch must refresh it
+  const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
+  ok(st.body.targets[0].status === "live", "reading the batch pulls live status, without waiting for cron");
+  ok(st.body.done === true, "batch closes on the read");
+}
+{
+  const h = newEnv({ buildStatus: "pending" });
+  const { m, s1 } = await setup(h);
+  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
+  h.calls.length = 0;
+  await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
+  const first = h.calls.filter((c) => c.url.includes("/builds/")).length;
+  await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
+  await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
+  const total = h.calls.filter((c) => c.url.includes("/builds/")).length;
+  ok(first === 1, "first read polls Heroku once");
+  ok(total === 1, "rapid re-reads are throttled, so fast UI polling cannot hammer Heroku", `saw ${total}`);
+}
+
 console.log("\n── undo a batch ──");
 {
   const h = newEnv({ buildStatus: "succeeded" });

@@ -3,11 +3,20 @@
  * mock network. Nothing here talks to Telegram, GitHub or Heroku.
  */
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** The same DDL the real deploy applies, so tests never rely on the request
+ *  path creating tables (it deliberately no longer does). */
+const SCHEMA_SQL = readFileSync(join(HERE, "..", "worker", "schema.sql"), "utf8");
 
 // ---------------------------------------------------------------- D1 shim ---
 // Mirrors the subset of the D1 API the worker uses: prepare().bind().first()/all()/run().
 export function makeDB() {
   const db = new DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
   const wrap = (sql, args = []) => ({
     bind: (...a) => wrap(sql, a),
     first: async () => {

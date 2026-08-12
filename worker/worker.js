@@ -719,7 +719,10 @@ export default {
 
     // Web panel. Same engine as the bot, different front door.
     if (path === "/api" || path.startsWith("/api/")) {
-      await ensureSchema(env);
+      // No schema DDL here on purpose. Traffic is low, so nearly every request
+      // lands on a COLD isolate and any per-request cache is useless — the DDL
+      // was costing ~15 D1 round trips on every call. Tables are created at
+      // deploy time and re-asserted by the cron below.
       try {
         return await handlePanel(env, request, ctx, path);
       } catch (e) {

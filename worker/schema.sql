@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS repos (
   branch        TEXT NOT NULL DEFAULT 'main',
   connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
   created_at    TEXT NOT NULL,
+  url           TEXT,                     -- the domain shown to the user
+  dir           TEXT DEFAULT '',          -- folder an uploaded file lands in
   UNIQUE (owner, name)
 );
 
@@ -90,3 +92,57 @@ CREATE TABLE IF NOT EXISTS deploys (
 
 CREATE INDEX IF NOT EXISTS deploys_pending ON deploys (build_status, created_at);
 CREATE INDEX IF NOT EXISTS deploys_recent  ON deploys (created_at DESC);
+
+-- ---- web panel ---------------------------------------------------------
+-- Applied at deploy time. The request path no longer runs any DDL: traffic is
+-- low enough that most requests hit a cold isolate, so doing it per-request
+-- cost ~15 D1 round trips on every single call.
+
+CREATE TABLE IF NOT EXISTS panel_users (
+  username   TEXT PRIMARY KEY,
+  pass_hash  TEXT NOT NULL,
+  salt       TEXT NOT NULL,
+  role       TEXT NOT NULL,              -- master | va
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token      TEXT PRIMARY KEY,
+  username   TEXT NOT NULL,
+  role       TEXT NOT NULL,
+  expires    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  ip       TEXT PRIMARY KEY,
+  n        INTEGER NOT NULL,
+  first_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS batches (
+  id         TEXT PRIMARY KEY,
+  who        TEXT NOT NULL,
+  file_name  TEXT NOT NULL,
+  mode       TEXT,
+  created_at TEXT NOT NULL,
+  last_poll  TEXT                          -- throttles the on-read Heroku refresh
+);
+
+CREATE TABLE IF NOT EXISTS batch_targets (
+  batch_id      TEXT NOT NULL,
+  repo_id       INTEGER NOT NULL,
+  app_id        INTEGER,
+  path          TEXT,
+  status        TEXT,
+  detail        TEXT,
+  commit_sha    TEXT,
+  prev_blob_sha TEXT,
+  new_blob_sha  TEXT,
+  build_id      TEXT,
+  build_url     TEXT,
+  finished_at   TEXT,
+  PRIMARY KEY (batch_id, repo_id)
+);
+
+CREATE INDEX IF NOT EXISTS bt_pending ON batch_targets (status);

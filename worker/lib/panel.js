@@ -89,7 +89,12 @@ async function auth(env, request) {
 
 // ------------------------------------------------------------------ schema
 
+// Once per isolate, not once per request. This was costing ~7 D1 round trips
+// on EVERY api call — the whole reason login felt slow.
+const panelSchemaReady = new WeakSet();
+
 export async function ensurePanelSchema(env) {
+  if (panelSchemaReady.has(env.DB)) return;
   const stmts = [
     `CREATE TABLE IF NOT EXISTS panel_users (username TEXT PRIMARY KEY, pass_hash TEXT NOT NULL, salt TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, username TEXT NOT NULL, role TEXT NOT NULL, expires TEXT NOT NULL, created_at TEXT NOT NULL)`,
@@ -105,6 +110,11 @@ export async function ensurePanelSchema(env) {
   const have = new Set((info.results || []).map((c) => c.name));
   if (!have.has("url")) await env.DB.prepare(`ALTER TABLE repos ADD COLUMN url TEXT`).run();
   if (!have.has("dir")) await env.DB.prepare(`ALTER TABLE repos ADD COLUMN dir TEXT DEFAULT ''`).run();
+  const binfo = await env.DB.prepare(`PRAGMA table_info(batches)`).all();
+  if (!(binfo.results || []).some((c) => c.name === "last_poll")) {
+    await env.DB.prepare(`ALTER TABLE batches ADD COLUMN last_poll TEXT`).run();
+  }
+  panelSchemaReady.add(env.DB);
 }
 
 // ------------------------------------------------------------- deploy engine
@@ -194,6 +204,35 @@ export async function runBatch(env, batchId, siteIds, bytes, fileName, mode, who
   }
 }
 
+const REFRESH_EVERY_MS = 4000;
+
+/** Poll Heroku for one batch's in-flight builds, at most once every few seconds. */
+async function refreshBatch(env, batchId) {
+  const b = await q(env, `SELECT last_poll FROM batches WHERE id=?`, batchId).first();
+  if (!b) return;
+  if (b.last_poll && Date.now() - Number(b.last_poll) < REFRESH_EVERY_MS) return;
+  await q(env, `UPDATE batches SET last_poll=? WHERE id=?`, String(Date.now()), batchId).run();
+
+  const rows = (await q(env,
+    `SELECT t.*, a.heroku_name, c.token AS hk_token
+     FROM batch_targets t JOIN apps a ON a.id=t.app_id JOIN connections c ON c.id=a.connection_id
+     WHERE t.batch_id=? AND t.status='building' AND t.build_id IS NOT NULL LIMIT 10`, batchId).all()).results || [];
+  for (const t of rows) {
+    try {
+      const bd = await HK.getBuild(t.hk_token, t.heroku_name, t.build_id, fetch);
+      if (bd.status === "pending") continue;
+      if (bd.status === "succeeded") {
+        await q(env, `UPDATE batch_targets SET status='live', detail=NULL, finished_at=? WHERE batch_id=? AND repo_id=?`,
+          nowIso(), batchId, t.repo_id).run();
+      } else {
+        const tail = await HK.buildLogTail(bd.output_stream_url, 8, fetch);
+        await q(env, `UPDATE batch_targets SET status='failed', detail=?, finished_at=? WHERE batch_id=? AND repo_id=?`,
+          (tail || "Build failed.").slice(-500), nowIso(), batchId, t.repo_id).run();
+      }
+    } catch { /* the cron is the backstop */ }
+  }
+}
+
 /** Called by cron: advance any build still running. */
 export async function pollPanelBuilds(env) {
   const rows = (await q(env,
@@ -227,7 +266,6 @@ export async function handlePanel(env, request, ctx, path) {
     return new Response(null, { status: 204, headers: corsHeaders(env, request) });
   }
 
-  await ensurePanelSchema(env);
   const seg = path.split("/").filter(Boolean); // ["api", ...]
   const route = seg[1] || "";
   const body = async () => {
@@ -342,6 +380,10 @@ export async function handlePanel(env, request, ctx, path) {
   }
 
   if (route === "batch" && seg[2]) {
+    // Refresh from Heroku on the read, throttled. This is why a finished build
+    // shows up in a second or two instead of waiting for the next cron tick,
+    // and it is what lets the cron drop to every 5 minutes.
+    await refreshBatch(env, seg[2]);
     const rows = (await q(env,
       `SELECT t.repo_id AS site_id, r.label, r.url, t.status, t.detail, t.path, t.build_url
        FROM batch_targets t JOIN repos r ON r.id=t.repo_id WHERE t.batch_id=? ORDER BY r.label`, seg[2]).all()).results || [];

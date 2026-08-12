@@ -166,3 +166,45 @@ Winner **"conversation"** (guided step, 35/40) with the lever/hazard-stripe Depl
 - The codeload-URL-vs-Heroku-queue timing is **unmeasured against a real build** (fallback covers it).
 - Heroku app creation needs a **verified** account (card on file); no free tier.
 - Creating repos needs the GitHub token scoped to **All repositories** + Administration: R/W.
+
+
+## Round 2 (2026-08-12 evening) — speed, KB, quota
+
+**Speed.** Bob said login felt slow. Measured: health 75 ms vs `/api/state` 230–445 ms. Cause was
+**mine**: `ensurePanelSchema` ran 6 CREATE TABLE + a PRAGMA on EVERY request. Caching it per isolate
+barely helped — traffic is low enough that nearly every request lands on a **cold isolate**, so any
+in-memory cache is useless. Fix: **no DDL on the request path at all**; `schema.sql` (now including
+the panel tables) is applied at deploy time and the cron re-asserts it. `/api/state` → **~130 ms**,
+login → **~200 ms**. The rest of login is PBKDF2 100k, which is deliberate.
+⚠️ D1 lives in **EEUR (FRA)**; every query crosses to Frankfurt. That is the remaining floor and
+the main argument for moving the database if he ever wants it faster from India.
+
+**Quota.** Measured, not guessed, via the CF GraphQL API: **27,764 of 100,000 req/day** on the
+Osanix account; `ai-film-bridge` is 25,692 of that and `deploy-bot` only 683. No risk today, but the
+limit is **per account**, so: cron cut from `* * * * *` to `*/5`, and `/api/batch` now refreshes
+build status **on read, throttled to once per 4 s** — which also makes results appear in ~1 s
+instead of up to 60 s. Tests lock both the refresh and the throttle.
+
+**Knowledge base.** Lives INSIDE the panel behind the same login (Help button, both roles), with 8
+screenshots embedded as **WebP data URIs** — so there is no second page to secure, no image URL
+anyone can fetch unauthenticated, and zero extra backend requests. Page 60 KB → 234 KB.
+Built by `panel/kb.py`, which is idempotent via `KB:*:START/END` markers.
+⚠️ **The demo data used to name Bob's other brands** (jetterix, glpure, ozem-plus, neurovitol,
+wego6, and a persona GitHub login). This file sits on a CLIENT's server — all 54 references were
+replaced with neutral names. Re-check after any design regeneration.
+
+### Bugs found and fixed this round
+- ⭐ `kb.py`'s first idempotency regex matched a **CSS comment** and swallowed the whole `<script>`
+  block (228 KB → 59 KB). Restored from git; removal is now marker-bounded. Never anchor a
+  destructive regex on a comment that also appears in another context.
+- ⭐ `show()` did `$('#'+id).hidden=...` for a fixed list; one missing element threw and killed
+  `boot()`, leaving a blank page with no clue why. Now skips absent screens.
+- ⭐ Adding the Help button pushed the header to **491 px on a 390 px phone**. Header now wraps and
+  drops the role chip under 470 px. Caught by an automated overflow check, not by looking.
+- The KB screenshot pass captured the **"Offline preview" note**; the login shot is now taken with
+  it hidden and cropped to the card.
+- ⚠️ `loading="lazy"` images below the fold report `naturalWidth===0` and look "broken" to a test.
+  `test/browser/kbtest.py` now scrolls the page before asserting.
+
+Browser suites kept in **`test/browser/`** (smoke, settings/VA roles, KB, overflow, screenshots).
+Node suites: **76 panel + 69 bot**.
