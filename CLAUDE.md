@@ -39,6 +39,13 @@ notification on every deploy someone else makes**. Neither slows the VA down.
 Everything after that is tapping buttons: `/addrepo` lists his repos, `/addapp` lists his apps
 and links one to a repo.
 
+⭐ **Ordering problem, solved by `seed.py`:** the normal `/connect` route needs a live bot, and the
+bot needs a BotFather token — so the GitHub/Heroku keys could not go in first. `./seed.py github
+<tok>` / `./seed.py heroku <tok>` verifies the credential against the real API and writes it
+straight into D1; `./seed.py list` shows everything wired. Round-trip tested with a real token
+(stored byte-for-byte, then deleted). Omit the token argument to be prompted hidden.
+🛑 **Only the BotFather token is truly un-substitutable** — no API can create a Telegram bot.
+
 ## Key facts / decisions
 - **Cloudflare Worker, not this server.** This box hangs ~daily and a migration is in progress;
   a deploy tool must not live on it. Matches the house pattern (fleetview, ai-visibility-collect).
