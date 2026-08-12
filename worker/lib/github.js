@@ -116,6 +116,28 @@ export async function deleteFile(token, { owner, repo, branch, path, message, sh
  * forward the Authorization header to that host: signed URLs reject an extra
  * auth header, so following the redirect automatically can fail. Hence manual.
  */
+/**
+ * The signed codeload URL for the repo archive, WITHOUT downloading it.
+ *
+ * This is the privacy path: handing this URL to Heroku means the repo contents
+ * travel GitHub -> Heroku directly and never pass through this Worker. GitHub
+ * signs it for private repos too.
+ *
+ * ⚠️ Private-repo archive links expire after ~5 minutes and Heroku queues
+ * builds, so the caller MUST keep the upload path as a fallback.
+ */
+export async function tarballUrl(token, owner, repo, ref, f = fetch) {
+  const res = await f(`${API}/repos/${owner}/${repo}/tarball/${encodeURIComponent(ref)}`, {
+    headers: headers(token),
+    redirect: "manual",
+  });
+  if (res.status >= 300 && res.status < 400) {
+    const loc = res.headers.get("location");
+    if (loc) return loc;
+  }
+  return null; // caller falls back to uploading the archive itself
+}
+
 export async function tarball(token, owner, repo, ref, maxBytes, f = fetch) {
   const first = await f(`${API}/repos/${owner}/${repo}/tarball/${encodeURIComponent(ref)}`, {
     headers: headers(token),
@@ -139,4 +161,22 @@ export async function tarball(token, owner, repo, ref, maxBytes, f = fetch) {
     throw new Error(`Repo archive is ${(buf.byteLength / 1048576).toFixed(1)} MB, over the ${(maxBytes / 1048576) | 0} MB limit for automatic deploys.`);
   }
   return buf;
+}
+
+/** Create a repository on the token's account. Needs Administration: write. */
+export async function createRepo(token, name, isPrivate = true, f = fetch) {
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(name)) {
+    throw new Error("Repo names may only use letters, numbers, dots, hyphens and underscores.");
+  }
+  const r = await gh(token, "/user/repos", {
+    method: "POST",
+    body: JSON.stringify({ name, private: isPrivate, auto_init: true }),
+  }, f);
+  if (!r.ok) {
+    const m = r.body?.errors?.[0]?.message || r.body?.message || "";
+    if (/already exists/i.test(m)) throw new Error(`You already have a repo called ${name}.`);
+    if (r.status === 403) throw new Error("That token cannot create repos — it needs Administration: Read and write, scoped to All repositories.");
+    throw new Error(`Could not create the repo (HTTP ${r.status}): ${m}`);
+  }
+  return { owner: r.body.owner.login, repo: r.body.name, full_name: r.body.full_name, branch: r.body.default_branch || "main" };
 }

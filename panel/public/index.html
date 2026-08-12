@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
+<title>Dispatch</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230B6B4D'/%3E%3Cpath d='M10 17l4 4 8-9' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* ============ RESET + TOKENS ============ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F4F2EA; --card:#FFFFFF; --line:#E3E1D6; --line2:#CFCDC2;
+  --ink:#1B211C; --mut:#4E574F; --faint:#5C645C;
+  --go:#0B6B4D; --go-dk:#08543C; --go-soft:#E2F2E9; --go-txt:#0A5C40;
+  --bad:#B3261E; --bad-dk:#95190F; --bad-soft:#FBE7E4; --bad-txt:#9B1C13;
+  --busy-soft:#FBF0DB; --busy-txt:#7A5300;
+  --info-soft:#E5EDFA; --info-txt:#1D4E9E;
+  --hazard:#FFC400;
+  --focus:#1C4FD8;
+  --r:18px; --rs:12px;
+  --shadow:0 1px 2px rgba(27,33,28,.06),0 6px 20px -8px rgba(27,33,28,.10);
+}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg); color:var(--ink); font-size:17px; line-height:1.45;
+  min-height:100dvh;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select{font:inherit;color:inherit}
+:focus{outline:none}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:6px}
+[hidden]{display:none !important}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
+
+/* ============ SHARED BITS ============ */
+.wrap{max-width:640px;margin:0 auto;padding:0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.h-q{font-size:clamp(26px,6.5vw,32px);font-weight:800;letter-spacing:-.02em;line-height:1.15;margin:6px 0 4px}
+.h-sub{color:var(--mut);font-size:15.5px;margin-bottom:18px}
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  min-height:58px;padding:0 22px;border-radius:16px;
+  background:var(--go);color:#fff;font-size:18px;font-weight:700;letter-spacing:-.01em;
+  width:100%;transition:background .12s, transform .06s;
+  -webkit-tap-highlight-color:transparent;
+}
+.btn:active{transform:scale(.985)}
+.btn:hover{background:var(--go-dk)}
+.btn:disabled{background:#C9CEC6;color:#454C45;cursor:not-allowed;transform:none}
+.btn.sec{background:var(--card);color:var(--ink);border:1.5px solid var(--line2)}
+.btn.sec:hover{background:#F1EFE7}
+.btn.danger{background:var(--card);color:var(--bad-txt);border:1.5px solid #E4B7B2}
+.btn.danger:hover{background:var(--bad-soft)}
+.btn.danger.armed{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.slim{min-height:48px;font-size:16px;width:auto;padding:0 18px}
+.btn.tiny{min-height:44px;font-size:15px;width:auto;padding:0 14px;border-radius:12px}
+/* The lever — Deploy's own reserved identity. Nothing else looks like this. */
+.btn.lever{
+  min-height:68px;border-radius:14px;border:2.5px solid var(--ink);
+  font-size:clamp(18px,4.6vw,21px);font-weight:800;
+  box-shadow:0 7px 0 var(--ink);position:relative;overflow:hidden;
+  padding-bottom:9px;
+}
+.btn.lever::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:9px;
+  background:repeating-linear-gradient(-45deg,var(--ink) 0 10px,var(--hazard) 10px 20px);
+}
+.btn.lever:active:not(:disabled){transform:translateY(6px);box-shadow:0 1px 0 var(--ink)}
+.btn.lever:disabled{border-color:var(--line2);box-shadow:0 4px 0 var(--line2)}
+.btn.lever:disabled::after{background:repeating-linear-gradient(-45deg,#ABA globalized 0,#ABA globalized 0) ;background:repeating-linear-gradient(-45deg,#B0AC9F 0 10px,#D8D5C9 10px 20px)}
+a{color:var(--go-txt)}
+.pill{
+  display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:700;
+  padding:6px 12px;border-radius:999px;white-space:nowrap;
+}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.pill.busy{background:var(--busy-soft);color:var(--busy-txt)}
+.pill.busy .dot{animation:pulse 1.1s ease-in-out infinite}
+.pill.ok{background:var(--go-soft);color:var(--go-txt)}
+.pill.bad{background:var(--bad-soft);color:var(--bad-txt)}
+.pill.info{background:var(--info-soft);color:var(--info-txt)}
+.pill.mut{background:#ECEAE1;color:var(--mut)}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.err{
+  background:var(--bad-soft);color:var(--bad-txt);border:1px solid #EDC2BD;
+  border-radius:var(--rs);padding:12px 14px;font-size:15px;font-weight:600;margin-top:14px;
+}
+#toast{
+  position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99;
+  max-width:min(92vw,480px);pointer-events:none;
+}
+#toast .t{
+  background:var(--ink);color:#fff;font-size:15px;font-weight:600;
+  padding:12px 18px;border-radius:12px;box-shadow:var(--shadow);
+  margin-bottom:8px;animation:toastin .18s ease-out;
+}
+#toast .t.bad{background:var(--bad)}
+@keyframes toastin{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:14.5px;font-weight:700;color:var(--mut);margin-bottom:6px}
+.field input[type=text],.field input[type=password],.field select{
+  width:100%;min-height:52px;padding:0 14px;border:1.5px solid var(--line2);
+  border-radius:var(--rs);background:#fff;font-size:17px;
+}
+.field input:focus-visible,.field select:focus-visible{outline-offset:0;border-color:transparent}
+.field small{display:block;color:var(--faint);font-size:13.5px;margin-top:5px;font-weight:400}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px}
+
+/* generic checkbox box (used by select-all) */
+.cbx{
+  width:26px;height:26px;border-radius:8px;border:2px solid var(--line2);flex:none;
+  display:flex;align-items:center;justify-content:center;background:#fff;transition:all .12s;
+}
+.cbx.on{background:var(--go);border-color:var(--go)}
+.cbx.on::after{content:"";width:12px;height:7px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.cbx.ind{background:var(--go);border-color:var(--go)}
+.cbx.ind::after{content:"";width:12px;height:0;border-bottom:3px solid #fff;border-radius:2px}
+
+/* ============ LOGIN ============ */
+#scr-login{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.login-card{width:100%;max-width:400px;padding:34px 26px 28px}
+.brand{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;letter-spacing:-.02em}
+.brand .bdot{width:26px;height:26px;border-radius:50%;background:var(--go);flex:none;position:relative}
+.brand .bdot::after{content:"";position:absolute;inset:7px 6px 9px;border-left:3px solid #fff;border-bottom:3px solid #fff;transform:rotate(-48deg) translate(1px,-2px);border-radius:1px}
+.login-card h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:22px 0 4px}
+.login-card .h-sub{margin-bottom:22px}
+.demo-note{margin-top:18px;font-size:13.5px;color:var(--faint);text-align:center}
+
+/* ============ MAIN HEADER ============ */
+header.app{
+  position:sticky;top:0;z-index:20;background:var(--bg);
+  border-bottom:1px solid var(--line);
+}
+header.app .wrap{display:flex;align-items:center;gap:10px;min-height:60px}
+header.app .brand{font-size:19px}
+.rolechip{font-size:12.5px;font-weight:800;letter-spacing:.06em;color:var(--mut);background:#ECEAE1;border-radius:999px;padding:4px 10px;text-transform:uppercase}
+.hspace{flex:1}
+.iconbtn{
+  min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:12px;color:var(--mut);font-weight:700;font-size:15px;padding:0 12px;
+}
+.iconbtn:hover{background:#ECEAE1;color:var(--ink)}
+
+/* ============ SPINE ============ */
+.spine{padding:18px 0 4px}
+.spine ol{list-style:none;display:flex}
+.spine li{flex:1;position:relative}
+.spine li:not(:first-child)::before{
+  content:"";position:absolute;top:15px;left:calc(-50% + 22px);right:calc(50% + 22px);
+  height:3px;border-radius:2px;background:var(--line2);
+}
+.spine li.done:not(:first-child)::before{background:var(--go)}
+.sstep{
+  width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:0 2px 8px;min-height:60px;border-radius:12px;
+}
+.sstep .c{
+  width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:14.5px;font-weight:800;background:#E7E5DC;color:var(--faint);
+  border:2.5px solid transparent;transition:background .15s;position:relative;z-index:1;
+}
+.sstep .l{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+li.done .sstep .c{background:var(--go);color:#fff}
+li.done .sstep .l{color:var(--go-txt)}
+li.cur .sstep .c{background:#fff;border-color:var(--go);color:var(--go-txt)}
+li.cur .sstep .l{color:var(--ink)}
+.sstep:disabled{cursor:default}
+.sstep:not(:disabled):hover .l{color:var(--ink)}
+
+/* ============ STEP PANEL ============ */
+#panel{padding:8px 0 150px}
+.sites-list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.selall2{
+  display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 4px;
+  font-weight:700;cursor:pointer;width:max-content;max-width:100%;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.selall2 input{position:absolute;opacity:0;width:1px;height:1px}
+.selall2:has(input:focus-visible){outline:3px solid var(--focus);outline-offset:2px;border-radius:10px}
+.site{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;min-height:64px;
+  background:var(--card);border:1.5px solid var(--line);border-radius:var(--r);
+  cursor:pointer;box-shadow:var(--shadow);transition:border-color .12s, background .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.site.on{border-color:var(--go);background:#FBFDF9}
+.site input{position:absolute;opacity:0;width:1px;height:1px}
+.site .box{
+  width:26px;height:26px;border-radius:8px;border:2px solid var(--line2);flex:none;
+  display:flex;align-items:center;justify-content:center;background:#fff;transition:all .12s;
+}
+.site.on .box{background:var(--go);border-color:var(--go)}
+.site.on .box::after{content:"";width:12px;height:7px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.site:has(input:focus-visible){outline:3px solid var(--focus);outline-offset:2px}
+.site .meta{min-width:0}
+.site .dom{font-size:17.5px;font-weight:800;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.site .sub{display:block;font-size:14px;color:var(--mut);margin-top:2px}
+.site .sub .noapp{color:var(--info-txt);font-weight:700}
+.site .sub .hasapp{color:var(--go-txt);font-weight:700}
+.recent-card{margin-top:22px;padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.recent-card .rc-t{flex:1;min-width:180px}
+.recent-card .rc-t b{font-weight:800}
+.recent-card .rc-t small{display:block;color:var(--mut);font-size:14px;margin-top:2px}
+.empty-card{margin-top:18px;padding:22px;text-align:left}
+.empty-card p{color:var(--mut);font-size:15.5px;margin-bottom:14px}
+
+/* drop zone */
+.drop{
+  margin-top:14px;border:2.5px dashed var(--line2);border-radius:22px;background:#FBFAF5;
+  min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:26px 18px;text-align:center;cursor:pointer;transition:all .12s;width:100%;
+}
+.drop:hover,.drop.over{border-color:var(--go);background:var(--go-soft)}
+.drop .ic{width:56px;height:56px;border-radius:50%;background:var(--go-soft);display:flex;align-items:center;justify-content:center;color:var(--go-txt)}
+.drop .big{font-size:18px;font-weight:800}
+.drop .small{color:var(--mut);font-size:15px}
+/* the chosen file, drawn as a job tag */
+.filecard{
+  margin-top:16px;padding:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:#fff;border:2px solid var(--ink);border-radius:14px;
+  box-shadow:5px 5px 0 rgba(27,33,28,.14);transform:rotate(-.6deg);
+}
+.filecard::before{
+  content:"";flex:none;width:14px;height:14px;border-radius:50%;
+  border:2.5px solid var(--ink);background:var(--bg);
+}
+.filecard .fic{width:48px;height:48px;border-radius:14px;background:var(--go-soft);color:var(--go-txt);display:flex;align-items:center;justify-content:center;flex:none}
+.filecard .fm{flex:1;min-width:140px}
+.filecard .fname{font-weight:800;font-size:17px;word-break:break-all}
+.filecard .fsize{color:var(--mut);font-size:14.5px}
+
+/* confirm */
+.sumcard{margin-top:14px;padding:18px}
+.sumrow{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.sumrow:last-child{border-bottom:0}
+.sumrow .k{color:var(--mut);width:84px;flex:none;font-weight:700;font-size:14.5px;padding-top:2px}
+.sumrow .v{flex:1;min-width:0}
+.sumrow .v .li{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+.sumrow .v .li small{color:var(--faint)}
+.sumrow .v .dim{color:var(--faint)}
+.note{margin-top:14px;font-size:14.5px;color:var(--mut)}
+
+/* watch */
+.wsum{margin-top:12px;font-size:17px;font-weight:800;min-height:26px}
+.wlist{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.wrow{padding:14px 16px;display:flex;align-items:flex-start;gap:12px}
+.wrow .wm{flex:1;min-width:0}
+.wrow .dom{font-weight:800;font-size:16.5px}
+.wrow .det{font-size:14px;color:var(--mut);margin-top:3px}
+.wrow .det a{font-weight:700}
+.wrow.f-bad{border-color:#EDC2BD;background:#FFFBFA}
+.wrow.f-ok{border-color:#C9E4D6}
+.wrow.f-info{border-color:#BFD2EE}
+.wact{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.banner{border-radius:var(--r);padding:14px 16px;font-weight:700;font-size:15.5px;margin-top:16px}
+.banner.ok{background:var(--go-soft);color:var(--go-txt)}
+.banner.bad{background:var(--bad-soft);color:var(--bad-txt)}
+.banner.mut{background:#ECEAE1;color:var(--mut)}
+
+/* bottom bar */
+#bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  background:linear-gradient(to top, var(--bg) 78%, rgba(244,242,234,0));
+  padding:14px 0 max(16px, env(safe-area-inset-bottom));
+}
+.barhint{font-size:15px;font-weight:600;color:var(--mut);margin:0 2px 10px;min-height:1.4em}
+.barrow{display:flex;gap:10px;align-items:center}
+.barrow .btn.back{width:auto;flex:none;padding:0 18px}
+
+/* ============ SETTINGS ============ */
+#scr-settings header.app .wrap{min-height:60px}
+.tabs{display:flex;gap:8px;overflow-x:auto;padding:16px 0 4px;-webkit-overflow-scrolling:touch}
+.tab{
+  min-height:44px;padding:0 18px;border-radius:999px;font-weight:800;font-size:15px;
+  background:#ECEAE1;color:var(--mut);flex:none;
+}
+.tab[aria-selected=true]{background:var(--ink);color:#fff}
+#set-panel{padding:10px 0 60px}
+.setcard{padding:18px;margin-top:14px}
+.setcard h3{font-size:18px;font-weight:800;letter-spacing:-.01em;margin-bottom:4px}
+.setcard .sub{color:var(--mut);font-size:14.5px;margin-bottom:14px}
+.acctline{display:flex;align-items:center;gap:8px;font-size:15.5px;margin-bottom:14px;font-weight:600}
+.acctline .ok-dot{width:10px;height:10px;border-radius:50%;background:var(--go);flex:none}
+.acctline .no-dot{width:10px;height:10px;border-radius:50%;background:var(--line2);flex:none}
+.srow{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.srow:last-child{border-bottom:0}
+.srow .sm{flex:1;min-width:0}
+.srow .sm b{font-size:16.5px}
+.srow .sm small{display:block;color:var(--mut);font-size:13.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .acts{display:flex;gap:6px;flex:none}
+@media(min-width:560px){.two{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}}
+</style>
+</head>
+<body>
+
+<div id="toast" aria-live="polite" role="status"></div>
+
+<!-- ================= LOGIN ================= -->
+<section id="scr-login" hidden>
+  <form class="card login-card" id="loginForm" novalidate>
+    <div class="brand"><span class="bdot" aria-hidden="true"></span>Dispatch</div>
+    <h1>Sign in</h1>
+    <p class="h-sub">Update your websites in a few taps.</p>
+    <div class="field">
+      <label for="lg-u">Username</label>
+      <input id="lg-u" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="lg-p">Password</label>
+      <input id="lg-p" type="password" autocomplete="current-password" required>
+    </div>
+    <div id="lg-err" class="err" hidden role="alert"></div>
+    <div style="margin-top:20px">
+      <button class="btn" type="submit" id="lg-btn">Sign in</button>
+    </div>
+    <p class="demo-note" id="demo-note" hidden>Offline preview — sign in as <b>bob</b> (owner) or <b>vera</b> (VA), any password.</p>
+  </form>
+</section>
+
+<!-- ================= MAIN ================= -->
+<section id="scr-main" hidden>
+  <header class="app">
+    <div class="wrap">
+      <span class="brand"><span class="bdot" aria-hidden="true"></span>Dispatch</span>
+      <span class="rolechip" id="rolechip"></span>
+      <span class="hspace"></span>
+      <button class="iconbtn" id="btn-settings" type="button">Settings</button>
+      <button class="iconbtn" id="btn-out" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <nav class="spine" aria-label="Deploy steps">
+      <ol id="spine"></ol>
+    </nav>
+    <main id="panel"></main>
+  </div>
+
+  <div id="bar"><div class="wrap" id="barin"></div></div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="scr-settings" hidden>
+  <header class="app">
+    <div class="wrap">
+      <button class="iconbtn" id="btn-back" type="button">&larr; Back</button>
+      <span class="brand" style="font-size:18px">Settings</span>
+      <span class="hspace"></span>
+    </div>
+  </header>
+  <div class="wrap">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div id="set-panel"></div>
+  </div>
+</section>
+
+<script>
+'use strict';
+/* =====================================================================
+   API LAYER
+   BASE  — where the JSON API lives ('' = same origin).
+   MOCK  — true switches every call to built-in fake data so the whole
+           panel can be clicked through offline. Real fetch by default.
+   ===================================================================== */
+const BASE = '';
+const MOCK = false;
+
+const REAL_API = {
+  tok:null,
+  setSession(t){ this.tok=t; },
+  async _j(method,path,body){
+    const headers={};
+    if(this.tok) headers['Authorization']='Bearer '+this.tok;
+    let payload;
+    if(body instanceof FormData){ payload=body; }
+    else if(body!==undefined){ headers['Content-Type']='application/json'; payload=JSON.stringify(body); }
+    const r=await fetch(BASE+path,{method,headers,body:payload});
+    if(r.status===401 && path!=='/api/login'){
+      forceSignOut();
+      throw new Error('Your session expired — please sign in again.');
+    }
+    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||d.message||('Request failed ('+r.status+')')); }
+    return r.json();
+  },
+  async login(u,p){ const d=await this._j('POST','/api/login',{username:u,password:p}); this.tok=d.session; return d; },
+  state(){ return this._j('GET','/api/state'); },
+  deploy(file,sites,mode){ const f=new FormData(); f.append('file',file); f.append('sites',JSON.stringify(sites)); f.append('mode',mode); return this._j('POST','/api/deploy',f); },
+  batch(id){ return this._j('GET','/api/batch/'+encodeURIComponent(id)); },
+  undo(id){ return this._j('POST','/api/undo/'+encodeURIComponent(id)); },
+  token(kind,token){ return this._j('POST','/api/token',{kind,token}); },
+  discoverRepos(){ return this._j('GET','/api/discover/repos'); },
+  discoverApps(){ return this._j('GET','/api/discover/apps'); },
+  siteCreate(s){ return this._j('POST','/api/site',s); },
+  siteUpdate(id,s){ return this._j('PATCH','/api/site/'+encodeURIComponent(id),s); },
+  siteDelete(id){ return this._j('DELETE','/api/site/'+encodeURIComponent(id)); },
+  repoCreate(name){ return this._j('POST','/api/repo/create',{name}); },
+  appCreate(name){ return this._j('POST','/api/app/create',{name}); },
+  link(site_id,app){ return this._j('POST','/api/link',{site_id,app}); },
+  userCreate(u){ return this._j('POST','/api/user',u); },
+  userDelete(un){ return this._j('DELETE','/api/user/'+encodeURIComponent(un)); },
+  password(current,next){ return this._j('POST','/api/password',{current,next}); }
+};
+
+const MOCK_API = (()=>{
+  const r=n=>Math.floor(Math.random()*n);
+  const delay=(ms=240)=>new Promise(res=>setTimeout(res,ms+r(160)));
+  const db={
+    users:[ {username:'bob',role:'master'}, {username:'vera',role:'va'} ],
+    accounts:{ github:[{login:'clairewheeler5231'}], heroku:[{email:'ops@dispatch.dev'}] },
+    sites:[
+      {id:'s1',label:'tryjetterix.com', url:'https://tryjetterix.com', owner:'clairewheeler5231',repo:'jetterix-site', branch:'main',dir:'public/', app:'jetterix-web', app_url:'https://jetterix-web.herokuapp.com'},
+      {id:'s2',label:'glpure.shop',     url:'https://glpure.shop',     owner:'clairewheeler5231',repo:'glpure',        branch:'main',dir:'site/',   app:'glpure-shop',  app_url:'https://glpure-shop.herokuapp.com'},
+      {id:'s3',label:'ozem-plus.store', url:'https://ozem-plus.store', owner:'clairewheeler5231',repo:'ozem-store',    branch:'main',dir:'/',       app:null,           app_url:null},
+      {id:'s4',label:'neurovitol.shop', url:'https://neurovitol.shop', owner:'clairewheeler5231',repo:'neurovitol',    branch:'main',dir:'public/', app:'neurovitol-web',app_url:'https://neurovitol-web.herokuapp.com'},
+      {id:'s5',label:'buy-wego6.com',   url:'https://buy-wego6.com',   owner:'clairewheeler5231',repo:'buy-wego6',     branch:'main',dir:'docs/',   app:'wego6-web',    app_url:'https://wego6-web.herokuapp.com'}
+    ],
+    recent:[ {batch:'b-1041',file:'summer-promo.html',when:'Yesterday, 18:12',sites:['tryjetterix.com','glpure.shop','neurovitol.shop'],undone:false} ],
+    batches:{}, nextBatch:1042, nextSite:6
+  };
+  const site=id=>db.sites.find(s=>s.id===id);
+  const FINAL=['live','failed','no_app','skipped'];
+  return {
+    setSession(){},
+    async login(u,p){
+      await delay(420);
+      const user=db.users.find(x=>x.username===String(u||'').trim().toLowerCase());
+      if(!user || !p) throw new Error('Wrong username or password.');
+      return { session:'mock-'+Math.random().toString(36).slice(2), role:user.role, username:user.username };
+    },
+    async state(){ await delay(); return JSON.parse(JSON.stringify({sites:db.sites,accounts:db.accounts,users:db.users,recent:db.recent})); },
+    async deploy(file,siteIds){
+      await delay(380);
+      const id='b-'+(db.nextBatch++);
+      const withApp=siteIds.filter(x=>site(x)&&site(x).app);
+      const failId=withApp.length>1?withApp[1]:null;
+      const targets=siteIds.map(sid=>{
+        const st=site(sid); let script;
+        if(!st.app)            script=[[0,'committing'],[1000+r(600),'no_app']];
+        else if(sid===failId)  script=[[0,'committing'],[1200+r(500),'building'],[4300+r(900),'failed']];
+        else                   script=[[0,'committing'],[1000+r(700),'building'],[3600+r(2800),'live']];
+        return {site_id:sid,label:st.label,script};
+      });
+      db.batches[id]={batch:id,t0:Date.now(),targets,undone:false};
+      db.recent.unshift({batch:id,file:file.name,when:'Just now',sites:targets.map(t=>t.label),undone:false});
+      return { batch:id, targets:targets.map(t=>({site_id:t.site_id,status:'committing'})) };
+    },
+    async batch(id){
+      await delay(90);
+      const b=db.batches[id]; if(!b) throw new Error('Unknown batch.');
+      const el=Date.now()-b.t0;
+      const targets=b.targets.map(t=>{
+        let status=t.script[0][1];
+        for(const [at,st] of t.script) if(el>=at) status=st;
+        const s=site(t.site_id)||{};
+        const out={site_id:t.site_id,label:t.label,status,detail:'',build_url:''};
+        if(b.undone){ out.status='skipped'; out.detail='Reverted — the commit was rolled back.'; }
+        else if(status==='failed'){ out.detail='Heroku build failed — npm ci exited with code 1.'; out.build_url='https://dashboard.heroku.com/apps/'+(s.app||'app')+'/activity'; }
+        else if(status==='no_app'){ out.detail='File saved. No Heroku app is linked, so nothing was rebuilt.'; }
+        else if(status==='live'){ out.detail='Committed and rebuilt.'; out.build_url=s.app_url||''; }
+        return out;
+      });
+      const done=b.undone || targets.every(t=>FINAL.includes(t.status));
+      return {batch:id,done,undone:b.undone,targets};
+    },
+    async undo(id){
+      await delay(650);
+      const b=db.batches[id]; if(b) b.undone=true;
+      const rec=db.recent.find(x=>x.batch===id); if(rec) rec.undone=true;
+      return {ok:true};
+    },
+    async token(kind,token){
+      await delay(500);
+      if(!token || token.trim().length<8) throw new Error('That does not look like a valid '+(kind==='github'?'GitHub token':'Heroku key')+'.');
+      if(kind==='github'){ db.accounts.github=[{login:'clairewheeler5231'}]; return {account:'clairewheeler5231'}; }
+      db.accounts.heroku=[{email:'ops@dispatch.dev'}]; return {account:'ops@dispatch.dev'};
+    },
+    async discoverRepos(){
+      await delay(420);
+      return [
+        {owner:'clairewheeler5231',repo:'jetterix-site'},{owner:'clairewheeler5231',repo:'glpure'},
+        {owner:'clairewheeler5231',repo:'ozem-store'},{owner:'clairewheeler5231',repo:'neurovitol'},
+        {owner:'clairewheeler5231',repo:'buy-wego6'},{owner:'clairewheeler5231',repo:'coolizi-lab'},
+        {owner:'clairewheeler5231',repo:'promo-pages'}
+      ];
+    },
+    async discoverApps(){
+      await delay(420);
+      return [
+        {name:'jetterix-web'},{name:'glpure-shop'},{name:'neurovitol-web'},
+        {name:'wego6-web'},{name:'staging-sandbox'}
+      ];
+    },
+    async siteCreate(p){ await delay(400); const s={id:'s'+(db.nextSite++),label:p.label,url:'https://'+p.label,owner:p.owner,repo:p.repo,branch:p.branch||'main',dir:p.dir||'/',app:p.app||null,app_url:p.app?('https://'+p.app+'.herokuapp.com'):null}; db.sites.push(s); return s; },
+    async siteUpdate(id,p){ await delay(340); const s=site(id); Object.assign(s,p); return s; },
+    async siteDelete(id){ await delay(340); db.sites=db.sites.filter(s=>s.id!==id); return {ok:true}; },
+    async repoCreate(name){ await delay(600); if(!/^[a-z0-9._-]+$/i.test(name||'')) throw new Error('Repo names can only use letters, numbers, dashes.'); return {owner:'clairewheeler5231',repo:name}; },
+    async appCreate(name){ await delay(600); if(!/^[a-z][a-z0-9-]*$/.test(name||'')) throw new Error('App names must be lowercase letters, numbers, dashes.'); return {name,url:'https://'+name+'.herokuapp.com'}; },
+    async link(site_id,app){ await delay(300); const s=site(site_id); s.app=app||null; s.app_url=app?('https://'+app+'.herokuapp.com'):null; return s; },
+    async userCreate(u){ await delay(380); if(!u.username||!u.password) throw new Error('Need a username and a password.'); if(db.users.some(x=>x.username===u.username)) throw new Error('That username already exists.'); db.users.push({username:u.username.toLowerCase(),role:'va'}); return {ok:true}; },
+    async userDelete(un){ await delay(340); db.users=db.users.filter(u=>u.username!==un); return {ok:true}; },
+    async password(cur,next){ await delay(420); if(!next||next.length<6) throw new Error('New password must be at least 6 characters.'); return {ok:true}; }
+  };
+})();
+
+const API = MOCK ? MOCK_API : REAL_API;
+
+/* =====================================================================
+   APP STATE + HELPERS
+   ===================================================================== */
+const S={
+  session:null, role:null, username:null,
+  data:null,
+  sel:new Set(), file:null, step:0,
+  batch:null, batchState:null, batchDone:false, poll:null, lastWatch:'',
+  tab:'tokens', editingSite:null, addingSite:false,
+  repos:null, apps:null
+};
+let pollErrs=0;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtSize=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';
+function toast(msg,bad){
+  const t=document.createElement('div'); t.className='t'+(bad?' bad':''); t.textContent=msg;
+  $('#toast').appendChild(t); setTimeout(()=>t.remove(),3400);
+}
+/* two-tap confirm that always restores the original label */
+function arm(btn,label,fn){
+  if(btn.dataset.armed){
+    delete btn.dataset.armed; btn.classList.remove('armed');
+    if(btn.dataset.was){ btn.textContent=btn.dataset.was; delete btn.dataset.was; }
+    fn(); return;
+  }
+  btn.dataset.armed='1'; btn.classList.add('armed');
+  btn.dataset.was=btn.textContent; btn.textContent=label;
+  setTimeout(()=>{
+    if(btn.isConnected && btn.dataset.armed){
+      delete btn.dataset.armed; btn.classList.remove('armed');
+      if(btn.dataset.was){ btn.textContent=btn.dataset.was; delete btn.dataset.was; }
+    }
+  },3800);
+}
+function show(id){ for(const s of ['scr-login','scr-main','scr-settings']) $('#'+s).hidden=(s!==id); }
+const siteById=id=>(S.data?S.data.sites.find(s=>s.id===id):null);
+const running=()=>!!S.poll;
+function stopPolling(){ if(S.poll){ clearInterval(S.poll); S.poll=null; } }
+
+/* =====================================================================
+   BOOT + AUTH
+   ===================================================================== */
+async function boot(){
+  if(MOCK) $('#demo-note').hidden=false;
+  const saved=sessionStorage.getItem('dispatch.session');
+  if(saved){
+    try{
+      const d=JSON.parse(saved);
+      S.session=d.session; S.role=d.role; S.username=d.username;
+      API.setSession(d.session);
+      await enterMain();
+      return;
+    }catch(e){ sessionStorage.removeItem('dispatch.session'); }
+  }
+  show('scr-login'); $('#lg-u').focus();
+}
+$('#loginForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const btn=$('#lg-btn'), err=$('#lg-err');
+  err.hidden=true; btn.disabled=true; btn.textContent='Signing in…';
+  try{
+    const d=await API.login($('#lg-u').value,$('#lg-p').value);
+    S.session=d.session; S.role=d.role; S.username=d.username||$('#lg-u').value.trim().toLowerCase();
+    API.setSession(d.session);
+    sessionStorage.setItem('dispatch.session',JSON.stringify({session:S.session,role:S.role,username:S.username}));
+    await enterMain();
+  }catch(ex){
+    err.textContent=ex.message||'Could not sign in.'; err.hidden=false;
+  }finally{ btn.disabled=false; btn.textContent='Sign in'; }
+});
+function signOut(){
+  sessionStorage.removeItem('dispatch.session');
+  stopPolling();
+  Object.assign(S,{session:null,role:null,username:null,data:null,sel:new Set(),file:null,step:0,batch:null,batchState:null,batchDone:false,lastWatch:''});
+  API.setSession(null);
+  show('scr-login'); $('#lg-p').value=''; $('#lg-u').focus();
+}
+function forceSignOut(){
+  const wasIn=!!S.session;
+  signOut();
+  if(wasIn) toast('You were signed out — please sign in again.',true);
+}
+$('#btn-out').addEventListener('click',signOut);
+$('#btn-settings').addEventListener('click',()=>{ openSettings(); });
+$('#btn-back').addEventListener('click',()=>{ show('scr-main'); renderMain(); });
+
+async function enterMain(){
+  show('scr-main');
+  $('#rolechip').textContent = S.role==='master'?'Owner':'VA';
+  $('#btn-settings').hidden = S.role!=='master';
+  $('#panel').innerHTML='<p class="h-sub" style="margin-top:24px">Loading your sites…</p>';
+  try{ S.data=await API.state(); }catch(e){ toast(e.message||'Could not load.',true); return; }
+  renderMain();
+}
+
+/* =====================================================================
+   MAIN — GUIDED STEPS
+   ===================================================================== */
+const STEPS=[{l:'Sites'},{l:'File'},{l:'Go'},{l:'Watch'}];
+function stepDone(i){
+  if(i===0) return S.sel.size>0;
+  if(i===1) return !!S.file;
+  if(i===2) return !!S.batch;
+  return false;
+}
+function canGo(n){
+  if(running()) return n===3;
+  if(n===0) return true;
+  if(n===1) return S.sel.size>0;
+  if(n===2) return S.sel.size>0 && !!S.file;
+  if(n===3) return !!S.batch;
+  return false;
+}
+function goStep(n){
+  if(!canGo(n)){ if(running()) toast('A deploy is running — hang on.'); return; }
+  S.step=n; renderMain();
+  const h=$('#panel h2'); if(h){ h.setAttribute('tabindex','-1'); h.focus({preventScroll:false}); }
+}
+function renderMain(){
+  if(!S.data) return;
+  renderSpine();
+  if(S.step===0) renderStep0();
+  else if(S.step===1) renderStep1();
+  else if(S.step===2) renderStep2();
+  else renderStep3();
+  renderBar();
+}
+function renderSpine(){
+  $('#spine').innerHTML=STEPS.map((st,i)=>{
+    const cls=(i===S.step?'cur':'')+(stepDone(i)&&i!==S.step?' done':'');
+    const dis=!canGo(i)||i===S.step;
+    return `<li class="${cls}">
+      <button type="button" class="sstep" data-go="${i}" ${dis?'disabled':''}
+        aria-current="${i===S.step?'step':'false'}" aria-label="Step ${i+1}: ${st.l}${stepDone(i)&&i!==S.step?' (done)':''}">
+        <span class="c" aria-hidden="true">${stepDone(i)&&i!==S.step?'&#10003;':i+1}</span>
+        <span class="l">${st.l}</span>
+      </button></li>`;
+  }).join('');
+  $('#spine').querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>goStep(+b.dataset.go)));
+}
+
+/* ---------- STEP 0 : which sites ---------- */
+function syncSelAll(){
+  const inp=$('#selall'); if(!inp||!S.data) return;
+  const total=S.data.sites.length, n=S.sel.size;
+  inp.checked = n===total && total>0;
+  inp.indeterminate = n>0 && n<total;
+  const box=inp.parentElement.querySelector('.cbx');
+  if(box){ box.classList.toggle('on',inp.checked); box.classList.toggle('ind',inp.indeterminate); }
+  const txt=$('#selalltxt');
+  if(txt) txt.textContent = inp.checked ? 'Clear selection' : ('Select all '+total+' sites');
+}
+function renderStep0(){
+  const sites=S.data.sites;
+  const rec=(S.data.recent||[])[0];
+
+  if(!sites.length){
+    $('#panel').innerHTML=`
+      <h2 class="h-q">No websites yet</h2>
+      <p class="h-sub">${S.role==='master'
+        ? 'Add your first site and it will show up here, ready to deploy to.'
+        : 'There is nothing to deploy to yet — ask the owner to add a website.'}</p>
+      <div class="card empty-card">
+        <p>${S.role==='master'
+          ? 'Open Settings, go to <b>Websites</b>, and pick one of your GitHub repos.'
+          : 'Once a website is added, it will appear here as a card you can tick.'}</p>
+        ${S.role==='master'?`<button type="button" class="btn slim" id="goto-sites">Open Settings &rarr; Websites</button>`:''}
+      </div>`;
+    const g=$('#goto-sites');
+    if(g) g.addEventListener('click',()=>{ S.tab='sites'; openSettings(); });
+    return;
+  }
+
+  const recInFlight = rec && S.batch===rec.batch && !S.batchDone;
+  $('#panel').innerHTML=`
+    <h2 class="h-q">Which sites get the update?</h2>
+    <p class="h-sub">Tap every site the file should go to.</p>
+    <label class="selall2">
+      <input type="checkbox" id="selall">
+      <span class="cbx" aria-hidden="true"></span>
+      <span id="selalltxt">Select all ${sites.length} sites</span>
+    </label>
+    <div class="sites-list" role="group" aria-label="Your websites">
+      ${sites.map(s=>`
+        <label class="site ${S.sel.has(s.id)?'on':''}">
+          <input type="checkbox" data-site="${s.id}" ${S.sel.has(s.id)?'checked':''} aria-label="${esc(s.label)}">
+          <span class="box" aria-hidden="true"></span>
+          <span class="meta">
+            <span class="dom">${esc(s.label)}</span>
+            <span class="sub">goes into <b>${esc(s.dir)}</b> &middot; ${s.app?`<span class="hasapp">Heroku linked</span>`:`<span class="noapp">no Heroku app</span>`}</span>
+          </span>
+        </label>`).join('')}
+    </div>
+    ${rec&&!rec.undone?`
+      <div class="card recent-card">
+        <div class="rc-t"><b>Last deploy:</b> ${esc(rec.file)} &rarr; ${rec.sites.length} site${rec.sites.length>1?'s':''}
+          <small>${esc(rec.when)}</small></div>
+        ${recInFlight
+          ? `<span class="pill busy"><span class="dot" aria-hidden="true"></span>Still finishing</span>`
+          : `<button type="button" class="btn danger tiny" id="rec-undo">Undo it</button>`}
+      </div>`:(rec&&rec.undone?`<div class="banner mut">Last deploy (${esc(rec.file)}) was undone.</div>`:'')}
+  `;
+  syncSelAll();
+  $('#selall').addEventListener('change',e=>{
+    const on=e.target.checked;
+    if(on) sites.forEach(s=>S.sel.add(s.id)); else S.sel.clear();
+    $('#panel').querySelectorAll('input[data-site]').forEach(cb=>{
+      cb.checked=on; cb.closest('.site').classList.toggle('on',on);
+    });
+    renderSpine(); renderBar(); syncSelAll();
+  });
+  $('#panel').querySelectorAll('input[data-site]').forEach(cb=>{
+    cb.addEventListener('change',()=>{
+      cb.checked?S.sel.add(cb.dataset.site):S.sel.delete(cb.dataset.site);
+      cb.closest('.site').classList.toggle('on',cb.checked);
+      renderSpine(); renderBar(); syncSelAll();
+    });
+  });
+  const ru=$('#rec-undo');
+  if(ru) ru.addEventListener('click',()=>arm(ru,'Tap again to undo',async()=>{
+    ru.disabled=true;
+    try{ await API.undo(rec.batch); S.data=await API.state(); toast('Last deploy undone.'); renderMain(); }
+    catch(e){ toast(e.message,true); ru.disabled=false; ru.textContent='Undo it'; }
+  }));
+}
+
+/* ---------- STEP 1 : the file ---------- */
+function renderStep1(){
+  $('#panel').innerHTML=`
+    <h2 class="h-q">Now, the file.</h2>
+    <p class="h-sub">Drop it below, or tap to pick one from this device.</p>
+    ${S.file?`
+      <div class="filecard">
+        <span class="fic" aria-hidden="true">${icoFile()}</span>
+        <span class="fm">
+          <span class="fname">${esc(S.file.name)}</span>
+          <span class="fsize">${fmtSize(S.file.size)}</span>
+        </span>
+        <button type="button" class="btn sec tiny" id="swapfile">Choose a different file</button>
+      </div>
+      <p class="note">This exact file will be placed in each site&rsquo;s folder, replacing any file with the same name.</p>
+    `:`
+      <button type="button" class="drop" id="drop" aria-label="Choose a file to deploy">
+        <span class="ic" aria-hidden="true">${icoUp()}</span>
+        <span class="big">Drop your file here</span>
+        <span class="small">or tap to browse</span>
+      </button>
+    `}
+    <input type="file" id="fpick" hidden>
+  `;
+  const fp=$('#fpick');
+  fp.addEventListener('change',()=>{ if(fp.files[0]) setFile(fp.files[0]); });
+  const dz=$('#drop');
+  if(dz){
+    dz.addEventListener('click',()=>fp.click());
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+    dz.addEventListener('drop',e=>{
+      e.preventDefault(); dz.classList.remove('over');
+      if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+    });
+  }
+  const sw=$('#swapfile'); if(sw) sw.addEventListener('click',()=>fp.click());
+}
+function setFile(f){ S.file=f; toast('File ready: '+f.name); renderMain(); }
+function icoUp(){return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-2"/></svg>`;}
+function icoFile(){return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></svg>`;}
+
+/* ---------- STEP 2 : confirm ---------- */
+function renderStep2(){
+  const chosen=[...S.sel].map(siteById).filter(Boolean);
+  $('#panel').innerHTML=`
+    <h2 class="h-q">Ready to deploy?</h2>
+    <p class="h-sub">Quick check — then pull the big green lever.</p>
+    <div class="card sumcard">
+      <div class="sumrow">
+        <span class="k">File</span>
+        <span class="v"><b>${esc(S.file.name)}</b> <span class="dim">&middot; ${fmtSize(S.file.size)}</span></span>
+      </div>
+      <div class="sumrow">
+        <span class="k">Sites</span>
+        <span class="v">
+          ${chosen.map(s=>`<span class="li"><b>${esc(s.label)}</b><small>${esc(s.dir)}${s.app?'':' &middot; saved only, no rebuild'}</small></span>`).join('')}
+        </span>
+      </div>
+    </div>
+    <p class="note">Each site gets the file committed to the folder shown, then its Heroku app rebuilds itself. You can undo the whole batch afterwards.</p>
+  `;
+}
+
+/* ---------- deploy + STEP 3 : watch ---------- */
+async function startDeploy(){
+  const btn=$('#deploybtn'); if(btn){btn.disabled=true;btn.textContent='Starting…';}
+  try{
+    const d=await API.deploy(S.file,[...S.sel],'auto');
+    S.batch=d.batch; S.batchState=null; S.batchDone=false; S.lastWatch=''; pollErrs=0;
+    /* Start the poller BEFORE rendering: renderStep3 checks S.poll to decide
+       whether contact was lost, so rendering first shows "Check again" and the
+       lost-contact state for the whole deploy. */
+    S.step=3;
+    S.poll=setInterval(pollBatch,800);
+    renderMain();
+    pollBatch();
+  }catch(e){ toast(e.message||'Deploy failed to start.',true); renderBar(); }
+}
+async function pollBatch(){
+  let b;
+  try{ b=await API.batch(S.batch); pollErrs=0; }
+  catch(e){
+    pollErrs++;
+    if(pollErrs>=3 && S.poll){
+      stopPolling();
+      toast('Lost track of the deploy.',true);
+      if(S.step===3) renderPollLost();
+      renderSpine(); renderBar();
+    }
+    return;
+  }
+  S.batchState=b;
+  if(S.step===3) renderWatchLive();
+  if(b.done && S.poll){
+    stopPolling(); S.batchDone=true;
+    if(S.step===3){ renderWatchActions(); renderSpine(); renderBar(); }
+    try{ S.data=await API.state(); }catch(e){}
+  }
+}
+function renderPollLost(){
+  const bn=$('#wbanner');
+  if(bn) bn.innerHTML=`<div class="banner bad">The panel lost contact while checking on this deploy. The deploy itself may still be running on the server.</div>`;
+  const wact=$('#wact');
+  if(wact){
+    wact.innerHTML=`<button type="button" class="btn" id="retrypoll">Check again</button>`;
+    $('#retrypoll').addEventListener('click',()=>{
+      pollErrs=0;
+      const b2=$('#wbanner'); if(b2) b2.innerHTML='';
+      const w2=$('#wact'); if(w2) w2.innerHTML='';
+      S.poll=setInterval(pollBatch,800); pollBatch();
+      renderSpine(); renderBar();
+    });
+  }
+}
+const STAT={
+  committing:{t:'Committing…',c:'busy',busy:true},
+  building:{t:'Building…',c:'busy',busy:true},
+  live:{t:'Live',c:'ok'},
+  failed:{t:'Failed',c:'bad'},
+  no_app:{t:'Saved (no app)',c:'info'},
+  skipped:{t:'Reverted',c:'mut'}
+};
+function renderStep3(){
+  S.lastWatch='';
+  $('#panel').innerHTML=`
+    <h2 class="h-q" id="wtitle">Deploying&hellip;</h2>
+    <p class="wsum" id="wsum" aria-live="polite"></p>
+    <div class="wlist" id="wlist"></div>
+    <div id="wbanner"></div>
+    <div class="wact" id="wact"></div>
+  `;
+  renderWatchLive();
+  if(S.batchDone) renderWatchActions();
+  else if(!S.poll && S.batch) renderPollLost();
+}
+function renderWatchLive(){
+  const b=S.batchState; if(!b) return;
+  const key=JSON.stringify(b.targets)+(b.done?'D':'')+(b.undone?'U':'');
+  if(key===S.lastWatch) return;
+  S.lastWatch=key;
+  const counts={};
+  b.targets.forEach(t=>counts[t.status]=(counts[t.status]||0)+1);
+  const parts=[];
+  if(counts.live) parts.push(counts.live+' live');
+  if(counts.failed) parts.push(counts.failed+' failed');
+  if(counts.no_app) parts.push(counts.no_app+' saved (no app)');
+  if(counts.skipped) parts.push(counts.skipped+' reverted');
+  const busy=(counts.committing||0)+(counts.building||0);
+  if(busy) parts.push(busy+' in progress');
+  $('#wsum').textContent=parts.join(' · ');
+  $('#wlist').innerHTML=b.targets.map(t=>{
+    const m=STAT[t.status]||{t:t.status,c:'mut'};
+    const flav=t.status==='failed'?' f-bad':(t.status==='live'?' f-ok':(t.status==='no_app'?' f-info':''));
+    const site=siteById(t.site_id)||{};
+    let det='';
+    if(t.status==='failed'){
+      det=esc(t.detail||'The build failed.');
+      if(t.build_url) det+=` <a href="${esc(t.build_url)}" target="_blank" rel="noopener">See the build log</a>`;
+    }else if(t.status==='no_app'){
+      det=esc(t.detail||'File saved. No Heroku app is linked, so nothing was rebuilt.');
+    }else if(t.status==='live'){
+      det=esc(t.detail||'Committed and rebuilt.');
+      const u=site.url||t.build_url;
+      if(u) det+=` <a href="${esc(u)}" target="_blank" rel="noopener">Open site &#8599;</a>`;
+    }else if(t.status==='skipped'){
+      det=esc(t.detail||'Reverted.');
+    }
+    return `<div class="card wrow${flav}">
+      <span class="wm">
+        <span class="dom">${esc(t.label)}</span>
+        ${det?`<span class="det">${det}</span>`:''}
+      </span>
+      <span class="pill ${m.c}">${m.busy?'<span class="dot" aria-hidden="true"></span>':''}${m.t}</span>
+    </div>`;
+  }).join('');
+  const title=$('#wtitle');
+  if(b.undone){ title.textContent='Deploy undone'; }
+  else if(b.done){
+    const bad=(counts.failed||0)>0;
+    title.textContent=bad?'Finished — with problems':'All done';
+  } else title.textContent='Deploying…';
+  const bn=$('#wbanner');
+  if(b.undone) bn.innerHTML=`<div class="banner mut">Everything from this deploy was rolled back. Your sites are as they were before.</div>`;
+  else if(b.done){
+    const bad=counts.failed||0, na=counts.no_app||0;
+    if(bad) bn.innerHTML=`<div class="banner bad">${bad} site${bad>1?'s':''} did not go live — the rest are fine. The failed site${bad>1?'s are':' is'} unchanged for visitors.</div>`;
+    else if(na) bn.innerHTML=`<div class="banner ok">Done. ${na} site${na>1?'s have':' has'} no app linked — the file is saved there, nothing was rebuilt.</div>`;
+    else bn.innerHTML=`<div class="banner ok">Every site got the update.</div>`;
+  } else bn.innerHTML='';
+}
+function renderWatchActions(){
+  const b=S.batchState; const wact=$('#wact'); if(!wact) return;
+  if(b&&b.undone){
+    wact.innerHTML=`<button type="button" class="btn sec" id="againbtn">Start another deploy</button>`;
+  }else{
+    wact.innerHTML=`
+      <button type="button" class="btn danger" id="undobtn">Undo this deploy</button>
+      <button type="button" class="btn sec" id="againbtn">Start another deploy</button>`;
+    const ub=$('#undobtn');
+    ub.addEventListener('click',()=>arm(ub,'Tap again — undo everything',async()=>{
+      ub.disabled=true; ub.textContent='Undoing…';
+      try{ await API.undo(S.batch); await pollAfterUndo(); toast('Deploy undone.'); }
+      catch(e){ toast(e.message,true); ub.disabled=false; ub.textContent='Undo this deploy'; }
+    }));
+  }
+  $('#againbtn').addEventListener('click',()=>{
+    S.batch=null; S.batchState=null; S.batchDone=false; S.file=null; S.lastWatch=''; pollErrs=0;
+    S.step=0; renderMain();
+  });
+}
+async function pollAfterUndo(){
+  const b=await API.batch(S.batch);
+  S.batchState=b; S.lastWatch='';
+  renderWatchLive(); renderWatchActions();
+  try{ S.data=await API.state(); }catch(e){}
+}
+
+/* ---------- bottom bar ---------- */
+function renderBar(){
+  const bar=$('#bar'), bin=$('#barin');
+  if(S.step===3){ bar.hidden=true; bin.innerHTML=''; return; }
+  bar.hidden=false;
+  const back=S.step>0?`<button type="button" class="btn sec back" id="backbtn">Back</button>`:'';
+  let main='', hint='';
+  const total=S.data?S.data.sites.length:0;
+  if(S.step===0){
+    const n=S.sel.size;
+    if(!total) hint='First, add a website in Settings.';
+    else hint=n?(n+' site'+(n>1?'s':'')+' selected.'):'First, tick at least one site.';
+    main=`<button type="button" class="btn" id="nextbtn" ${n?'':'disabled'}>Continue</button>`;
+  }else if(S.step===1){
+    hint=S.file?'':'First, drop in a file.';
+    main=`<button type="button" class="btn" id="nextbtn" ${S.file?'':'disabled'}>Continue</button>`;
+  }else if(S.step===2){
+    const n=S.sel.size;
+    hint='You can undo the whole batch afterwards.';
+    main=`<button type="button" class="btn lever" id="deploybtn">Deploy to ${n} site${n>1?'s':''}</button>`;
+  }
+  bin.innerHTML=`<p class="barhint" aria-live="polite" ${hint?'':'hidden'}>${hint}</p><div class="barrow">${back}${main}</div>`;
+  const bb=$('#backbtn'); if(bb) bb.addEventListener('click',()=>goStep(S.step-1));
+  const nb=$('#nextbtn'); if(nb) nb.addEventListener('click',()=>goStep(S.step+1));
+  const db=$('#deploybtn'); if(db) db.addEventListener('click',startDeploy);
+}
+
+/* stop the browser opening dropped files */
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>e.preventDefault());
+
+/* =====================================================================
+   SETTINGS (master only)
+   ===================================================================== */
+const TABS=[['tokens','Keys'],['sites','Websites'],['create','Create new'],['users','People']];
+function openSettings(){
+  if(S.role!=='master'){ toast('Only the owner can open Settings.'); return; }
+  /* Never render Settings before the first /api/state has landed: every tab
+     reads S.data.* and would throw on a null. */
+  if(!S.data){ toast('Still loading — try again in a second.'); return; }
+  show('scr-settings'); renderTabs(); renderSettings();
+}
+function renderTabs(){
+  $('#tabs').innerHTML=TABS.map(([id,l])=>
+    `<button type="button" class="tab" role="tab" aria-selected="${S.tab===id}" data-tab="${id}">${l}</button>`).join('');
+  $('#tabs').querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
+    S.tab=b.dataset.tab; S.editingSite=null; S.addingSite=false; renderTabs(); renderSettings();
+  }));
+}
+function renderSettings(){
+  if(S.tab==='tokens') renderTokens();
+  else if(S.tab==='sites') renderSitesTab();
+  else if(S.tab==='create') renderCreate();
+  else renderUsers();
+}
+
+/* ---- keys ---- */
+function renderTokens(){
+  const gh=(S.data.accounts.github||[])[0];
+  const hk=(S.data.accounts.heroku||[])[0];
+  $('#set-panel').innerHTML=`
+    ${tokenCard('github','GitHub key', gh?('Connected as <b>'+esc(gh.login)+'</b>'):null,
+      'Lets the panel put files into your repos. Paste a personal access token with repo access.')}
+    ${tokenCard('heroku','Heroku key', hk?('Connected as <b>'+esc(hk.email)+'</b>'):null,
+      'Lets the panel rebuild your apps after each change. Paste your Heroku API key (Account settings &rarr; API Key).')}
+  `;
+  ['github','heroku'].forEach(kind=>{
+    $('#tok-save-'+kind).addEventListener('click',async()=>{
+      const inp=$('#tok-'+kind), btn=$('#tok-save-'+kind);
+      btn.disabled=true; btn.textContent='Checking…';
+      try{
+        const d=await API.token(kind,inp.value);
+        S.data=await API.state();
+        const acct=(d&&d.account&&typeof d.account==='object')?(d.account.login||d.account.email||''):String(d.account||'');
+        toast((kind==='github'?'GitHub':'Heroku')+' connected: '+acct);
+        renderTokens();
+      }catch(e){ toast(e.message,true); btn.disabled=false; btn.textContent='Save'; }
+    });
+  });
+}
+function tokenCard(kind,title,acct,help){
+  return `<div class="card setcard">
+    <h3>${title}</h3>
+    <p class="sub">${help}</p>
+    <p class="acctline">${acct?`<span class="ok-dot" aria-hidden="true"></span>${acct}`:`<span class="no-dot" aria-hidden="true"></span>Not connected yet`}</p>
+    <div class="field">
+      <label for="tok-${kind}">${acct?'Replace the key':'Paste the key'}</label>
+      <input id="tok-${kind}" type="password" class="mono" autocomplete="off" spellcheck="false" placeholder="Paste here">
+    </div>
+    <button type="button" class="btn slim" id="tok-save-${kind}">Save</button>
+  </div>`;
+}
+
+/* ---- websites ---- */
+async function ensureDiscover(){
+  if(!S.repos){ const d=await API.discoverRepos(); S.repos=Array.isArray(d)?d:(d.repos||[]); }
+  if(!S.apps){ const d=await API.discoverApps(); S.apps=Array.isArray(d)?d:(d.apps||[]); }
+}
+function renderSitesTab(){
+  const p=$('#set-panel');
+  if(S.addingSite||S.editingSite){ renderSiteForm(); return; }
+  p.innerHTML=`
+    <div class="card setcard">
+      <h3>Your websites</h3>
+      <p class="sub">These are the sites the deploy screen shows.</p>
+      ${S.data.sites.map(s=>`
+        <div class="srow">
+          <span class="sm"><b>${esc(s.label)}</b>
+            <small>${esc(s.owner)}/${esc(s.repo)} &middot; ${esc(s.dir)} &middot; ${s.app?('Heroku: '+esc(s.app)):'no Heroku app'}</small></span>
+          <span class="acts">
+            <button type="button" class="btn sec tiny" data-edit="${s.id}">Edit</button>
+            <button type="button" class="btn danger tiny" data-del="${s.id}">Remove</button>
+          </span>
+        </div>`).join('')||'<p class="sub">No websites yet — add your first one below.</p>'}
+      <div style="margin-top:14px"><button type="button" class="btn slim" id="addsite">Add a website</button></div>
+    </div>`;
+  $('#addsite').addEventListener('click',()=>{ S.addingSite=true; renderSiteForm(true); });
+  p.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>{
+    S.editingSite=b.dataset.edit; renderSiteForm(true);
+  }));
+  p.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
+    const s=siteById(b.dataset.del);
+    arm(b,'Tap again',async()=>{
+      try{
+        await API.siteDelete(s.id); S.sel.delete(s.id); S.data=await API.state();
+        toast(s.label+' removed. The website itself is untouched — it just left this panel.');
+        renderSitesTab();
+      }
+      catch(e){ toast(e.message,true); }
+    });
+  }));
+}
+async function renderSiteForm(fresh){
+  const p=$('#set-panel');
+  if(fresh) p.innerHTML='<p class="h-sub" style="margin-top:20px">Loading repos and apps…</p>';
+  try{ await ensureDiscover(); }catch(e){ toast(e.message,true); S.addingSite=false; S.editingSite=null; renderSitesTab(); return; }
+  const s=S.editingSite?siteById(S.editingSite):null;
+  p.innerHTML=`
+    <div class="card setcard">
+      <h3>${s?'Edit '+esc(s.label):'Add a website'}</h3>
+      <p class="sub">${s?'Change how deploys land on this site.':'Pick one of your repos and give it a friendly name.'}</p>
+      <div class="field">
+        <label for="sf-repo">GitHub repo</label>
+        <select id="sf-repo" ${s?'disabled':''}>
+          ${S.repos.map(r=>{const v=(r.owner||'')+'/'+(r.repo||r.name||''); const cur=s&&(s.owner+'/'+s.repo)===v;
+            return `<option value="${esc(v)}" ${cur?'selected':''}>${esc(v)}</option>`;}).join('')}
+        </select>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="sf-label">Domain shown to users</label>
+          <input id="sf-label" type="text" autocapitalize="none" spellcheck="false" placeholder="example.com" value="${esc(s?s.label:'')}">
+          <small>This is the name everyone sees on the deploy screen.</small>
+        </div>
+        <div class="field">
+          <label for="sf-dir">Folder the file lands in</label>
+          <input id="sf-dir" type="text" autocapitalize="none" spellcheck="false" placeholder="public/" value="${esc(s?s.dir:'public/')}">
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="sf-branch">Branch</label>
+          <input id="sf-branch" type="text" autocapitalize="none" spellcheck="false" value="${esc(s?s.branch:'main')}">
+        </div>
+        <div class="field">
+          <label for="sf-app">Heroku app</label>
+          <select id="sf-app">
+            <option value="">None</option>
+            ${S.apps.map(a=>`<option value="${esc(a.name)}" ${s&&s.app===a.name?'selected':''}>${esc(a.name)}</option>`).join('')}
+          </select>
+          <small>With no app linked, the file is saved but nothing is rebuilt.</small>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
+        <button type="button" class="btn slim" id="sf-save">${s?'Save changes':'Add website'}</button>
+        <button type="button" class="btn sec slim" id="sf-cancel">Cancel</button>
+      </div>
+    </div>`;
+  $('#sf-cancel').addEventListener('click',()=>{ S.addingSite=false; S.editingSite=null; renderSitesTab(); });
+  $('#sf-save').addEventListener('click',async()=>{
+    const label=$('#sf-label').value.trim(), dir=$('#sf-dir').value.trim()||'/',
+          branch=$('#sf-branch').value.trim()||'main', app=$('#sf-app').value||null;
+    if(!label){ toast('Give the site its domain name.',true); return; }
+    const [owner,repo]=$('#sf-repo').value.split('/');
+    const btn=$('#sf-save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      if(s){
+        await API.siteUpdate(s.id,{label,dir,branch});
+        if((s.app||null)!==(app||null)) await API.link(s.id,app);
+      }else{
+        const created=await API.siteCreate({label,dir,branch,owner,repo,app});
+        if(app && created && created.id && created.app!==app) await API.link(created.id,app);
+      }
+      S.data=await API.state();
+      toast(s?'Saved.':label+' added.');
+      S.addingSite=false; S.editingSite=null; renderSitesTab();
+    }catch(e){ toast(e.message,true); btn.disabled=false; btn.textContent=s?'Save changes':'Add website'; }
+  });
+}
+
+/* ---- create new ---- */
+function renderCreate(){
+  $('#set-panel').innerHTML=`
+    <div class="card setcard">
+      <h3>New GitHub repo</h3>
+      <p class="sub">Makes an empty repo on your connected GitHub account.</p>
+      <div class="field"><label for="cr-repo">Repo name</label>
+        <input id="cr-repo" type="text" autocapitalize="none" spellcheck="false" placeholder="my-new-site"></div>
+      <button type="button" class="btn slim" id="cr-repo-go">Create repo</button>
+    </div>
+    <div class="card setcard">
+      <h3>New Heroku app</h3>
+      <p class="sub">Makes a fresh app on your connected Heroku account.</p>
+      <div class="field"><label for="cr-app">App name</label>
+        <input id="cr-app" type="text" autocapitalize="none" spellcheck="false" placeholder="my-new-app"></div>
+      <button type="button" class="btn slim" id="cr-app-go">Create app</button>
+    </div>`;
+  $('#cr-repo-go').addEventListener('click',async()=>{
+    const b=$('#cr-repo-go'); b.disabled=true; b.textContent='Creating…';
+    try{ const d=await API.repoCreate($('#cr-repo').value.trim()); S.repos=null; toast('Repo created: '+(d.owner?d.owner+'/':'')+(d.repo||d.name||'')); $('#cr-repo').value=''; }
+    catch(e){ toast(e.message,true); }
+    b.disabled=false; b.textContent='Create repo';
+  });
+  $('#cr-app-go').addEventListener('click',async()=>{
+    const b=$('#cr-app-go'); b.disabled=true; b.textContent='Creating…';
+    try{ const d=await API.appCreate($('#cr-app').value.trim()); S.apps=null; toast('App created: '+(d.name||'')); $('#cr-app').value=''; }
+    catch(e){ toast(e.message,true); }
+    b.disabled=false; b.textContent='Create app';
+  });
+}
+
+/* ---- people ---- */
+function renderUsers(){
+  const p=$('#set-panel');
+  p.innerHTML=`
+    <div class="card setcard">
+      <h3>Who can sign in</h3>
+      <p class="sub">The VA can deploy and undo, but can never open Settings.</p>
+      ${S.data.users.map(u=>`
+        <div class="srow">
+          <span class="sm"><b>${esc(u.username)}</b><small>${u.role==='master'?'Owner — full control':'VA — deploy only'}</small></span>
+          <span class="acts">${(u.role!=='master'&&u.username!==S.username)?`<button type="button" class="btn danger tiny" data-udel="${esc(u.username)}">Remove</button>`:''}</span>
+        </div>`).join('')}
+    </div>
+    <div class="card setcard">
+      <h3>Add a VA</h3>
+      <div class="two">
+        <div class="field"><label for="nu-name">Username</label>
+          <input id="nu-name" type="text" autocapitalize="none" spellcheck="false" autocomplete="off"></div>
+        <div class="field"><label for="nu-pass">Their password</label>
+          <input id="nu-pass" type="password" autocomplete="new-password"></div>
+      </div>
+      <button type="button" class="btn slim" id="nu-go">Add VA</button>
+    </div>
+    <div class="card setcard">
+      <h3>Change my password</h3>
+      <div class="two">
+        <div class="field"><label for="cp-cur">Current password</label>
+          <input id="cp-cur" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="cp-new">New password</label>
+          <input id="cp-new" type="password" autocomplete="new-password"></div>
+      </div>
+      <button type="button" class="btn slim" id="cp-go">Change password</button>
+    </div>`;
+  p.querySelectorAll('[data-udel]').forEach(b=>b.addEventListener('click',()=>{
+    arm(b,'Tap again',async()=>{
+      try{ await API.userDelete(b.dataset.udel); S.data=await API.state(); toast(b.dataset.udel+' removed.'); renderUsers(); }
+      catch(e){ toast(e.message,true); }
+    });
+  }));
+  $('#nu-go').addEventListener('click',async()=>{
+    const b=$('#nu-go'); b.disabled=true;
+    try{ await API.userCreate({username:$('#nu-name').value.trim(),password:$('#nu-pass').value,role:'va'});
+      S.data=await API.state(); toast('VA added.'); renderUsers(); }
+    catch(e){ toast(e.message,true); b.disabled=false; }
+  });
+  $('#cp-go').addEventListener('click',async()=>{
+    const b=$('#cp-go'); b.disabled=true; b.textContent='Saving…';
+    try{ await API.password($('#cp-cur').value,$('#cp-new').value); toast('Password changed.'); $('#cp-cur').value='';$('#cp-new').value=''; }
+    catch(e){ toast(e.message,true); }
+    b.disabled=false; b.textContent='Change password';
+  });
+}
+
+boot();
+</script>
+</body>
+</html>

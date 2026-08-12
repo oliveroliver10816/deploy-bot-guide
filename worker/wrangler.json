@@ -11,10 +11,13 @@
     }
   ],
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": [
+      "* * * * *"
+    ]
   },
   "vars": {
-    "OWNER_ID": "558755209"
+    "OWNER_ID": "8054294655,558755209",
+    "PANEL_ORIGIN": "https://ail.com.de,https://www.ail.com.de"
   },
   "observability": {
     "enabled": true

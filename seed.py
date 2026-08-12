@@ -10,6 +10,7 @@ API keys can be loaded first and the only remaining step is creating the bot.
     ./seed.py github ghp_xxxxxxxx
     ./seed.py heroku HRKU-xxxxxxxx
     ./seed.py list
+    ./seed.py user <username> <password> master|va
 
 The token is verified against the real API before it is stored and is never
 printed. It is passed to wrangler in a temp FILE, so it never appears in the
@@ -84,8 +85,26 @@ def q(s):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("github", "heroku", "list"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("github", "heroku", "list", "user"):
         sys.exit(__doc__)
+
+    if sys.argv[1] == "user":
+        import base64, hashlib, os as _os
+        if len(sys.argv) < 5:
+            sys.exit("usage: ./seed.py user <username> <password> master|va")
+        uname, pwd, role = sys.argv[2], sys.argv[3], sys.argv[4]
+        if role not in ("master", "va"):
+            sys.exit("role must be master or va")
+        # Must match the Worker exactly: PBKDF2-HMAC-SHA256, 100k iters, 32 bytes.
+        salt = _os.urandom(16)
+        dk = hashlib.pbkdf2_hmac("sha256", pwd.encode(), salt, 100000, dklen=32)
+        d1_write(
+            "INSERT INTO panel_users (username, pass_hash, salt, role, created_at) VALUES "
+            f"({q(uname)}, {q(base64.b64encode(dk).decode())}, {q(base64.b64encode(salt).decode())}, {q(role)}, datetime('now')) "
+            "ON CONFLICT (username) DO UPDATE SET pass_hash=excluded.pass_hash, salt=excluded.salt, role=excluded.role;"
+        )
+        print(f"Panel user ready: {uname} ({role})")
+        return
 
     if sys.argv[1] == "list":
         rows = d1_read("SELECT kind, account, created_at FROM connections ORDER BY kind;")

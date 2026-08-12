@@ -21,6 +21,7 @@ import { tg, send, edit, answerCb, deleteMsg, downloadFile, keyboard, esc } from
 import * as GH from "./lib/github.js";
 import * as HK from "./lib/heroku.js";
 import { toBase64, nowIso, humanSize, safeJoin, parentDir } from "./lib/util.js";
+import { handlePanel, corsHeaders, pollPanelBuilds, ensurePanelSchema } from "./lib/panel.js";
 
 // Worker memory guard. A 20 MB upload also costs ~27 MB as base64 while committing,
 // so the archive ceiling is kept well under the 128 MB isolate limit.
@@ -331,8 +332,11 @@ async function onMessage(env, token, msg) {
   // unset, the first person to say hello becomes owner (trust on first use).
   if (!user) {
     const anyUser = await q(env, "SELECT COUNT(*) AS n FROM users").first();
-    const configured = env.OWNER_ID ? Number(env.OWNER_ID) : null;
-    if ((configured && from.id === configured) || (!configured && anyUser.n === 0)) {
+    // OWNER_ID may list several ids: Bob has more than one Telegram account and
+    // being refused by the bot he owns is the one failure with no way back in.
+    const configured = String(env.OWNER_ID || "")
+      .split(",").map((s) => Number(s.trim())).filter(Boolean);
+    if (configured.includes(from.id) || (!configured.length && anyUser.n === 0)) {
       await q(env, `INSERT INTO users (telegram_id, name, role, added_at) VALUES (?,?,?,?)`,
         from.id, from.first_name || "owner", "owner", nowIso()).run();
       user = await getUser(env, from.id);
@@ -713,6 +717,19 @@ export default {
       return new Response("deploy-bot is running.\n", { headers: { "Content-Type": "text/plain" } });
     }
 
+    // Web panel. Same engine as the bot, different front door.
+    if (path === "/api" || path.startsWith("/api/")) {
+      await ensureSchema(env);
+      try {
+        return await handlePanel(env, request, ctx, path);
+      } catch (e) {
+        return new Response(JSON.stringify({ error: String(e.message || e) }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders(env, request) },
+        });
+      }
+    }
+
     if (path === "/webhook" && request.method === "POST") {
       if (env.WEBHOOK_SECRET &&
           request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
@@ -744,7 +761,9 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       await ensureSchema(env);
+      await ensurePanelSchema(env);
       if (env.TELEGRAM_BOT_TOKEN) await pollBuilds(env, env.TELEGRAM_BOT_TOKEN);
+      await pollPanelBuilds(env);
     })());
   },
 };

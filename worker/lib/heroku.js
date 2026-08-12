@@ -129,3 +129,25 @@ export async function buildLogTail(url, lines = 12, f = fetch) {
     return "";
   }
 }
+
+/**
+ * Create an app. Requires a VERIFIED Heroku account (card on file).
+ *
+ * ⚠️ web_url is NOT derivable from the name — since June 2023 Heroku appends a
+ * random 12-character suffix, so always read it from this response. ⚠️ That URL
+ * serves a 502 welcome page until the first successful release, so never tell a
+ * user the app is "live" on the strength of creation alone.
+ */
+export async function createApp(token, name, region, f = fetch) {
+  const payload = {};
+  if (name) payload.name = name;
+  if (region) payload.region = region;
+  const r = await hk(token, "/apps", { method: "POST", body: JSON.stringify(payload) }, f);
+  if (!r.ok) {
+    const m = r.body?.message || "";
+    if (/verif/i.test(m)) throw new Error("Heroku needs this account verified (a card on file) before it will create apps.");
+    if (/already taken|already exists/i.test(m)) throw new Error(`The name "${name}" is already taken on Heroku.`);
+    throw new Error(`Could not create the app (HTTP ${r.status}): ${m}`);
+  }
+  return { name: r.body.name, web_url: r.body.web_url, id: r.body.id, deployed: false };
+}
