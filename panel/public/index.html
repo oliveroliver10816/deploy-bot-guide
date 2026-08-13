@@ -150,7 +150,7 @@ img{max-width:100%}
   font:600 var(--fs-1)/1.2 var(--font);cursor:pointer;border:var(--bw) solid transparent;
   color:var(--ink-1);background:transparent;user-select:none;white-space:nowrap;
   transition:background .15s,border-color .15s,color .15s,transform .06s,opacity .15s}
-.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:active:not(:disabled){transform:translateY(1px) scale(.99)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn[aria-busy="true"]{pointer-events:none;opacity:.8}
 .btn-primary{background:var(--accent);color:var(--accent-ink);box-shadow:var(--el-1)}
@@ -351,8 +351,9 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   padding:var(--sp-6) var(--sp-4);margin:var(--sp-4) 0;
   border:var(--bw-2) dashed var(--line-2);border-radius:var(--r-2);background:var(--bg-3);
   color:var(--ink-3);cursor:pointer;text-align:center;
-  transition:border-color .15s,background .15s,color .15s}
+  transition:border-color .15s,background .15s,color .15s,transform .15s}
 .drop:hover,.drop.drag{border-color:var(--accent);background:var(--bg-4);color:var(--ink-2)}
+.drop.drag{transform:scale(1.01)}
 .drop .ic-l{color:var(--ink-4)}
 .drop:hover .ic-l,.drop.drag .ic-l{color:var(--accent)}
 .drop-t{font-weight:650;color:var(--ink-1);font-size:var(--fs-1)}
@@ -371,10 +372,14 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
 .batch{background:var(--bg-3);border:var(--bw) solid var(--line-1);border-radius:var(--r-2);
   padding:var(--sp-4);margin-bottom:var(--sp-4)}
 .batch.attn{border-color:var(--err-line)}
-.batch-head{display:flex;align-items:baseline;gap:var(--sp-3);justify-content:space-between;
-  margin-bottom:var(--sp-2)}
+/* Three things shared one narrow line, so even "3 files" wrapped to two lines.
+   Let the header wrap and give the destination a line of its own. */
+.batch-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-2) var(--sp-3);
+  justify-content:space-between;margin-bottom:var(--sp-2)}
+.batch-file{flex:1 1 auto;min-width:0}
+.batch-where{flex:1 1 100%;min-width:0}
 .batch-file{font-family:var(--mono);font-weight:600;color:var(--ink-1);font-size:var(--fs-0);
-  overflow-wrap:anywhere}
+  overflow-wrap:break-word}
 .batch-when{font-size:var(--fs--1);color:var(--ink-3);white-space:nowrap}
 .sumline{font-size:var(--fs-1);font-weight:650;color:var(--ink-1);margin-bottom:var(--sp-2);
   display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
@@ -416,9 +421,9 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
 .l-time{font-family:var(--mono);font-size:var(--fs--1);color:var(--ink-3);white-space:nowrap}
 .l-who{font-family:var(--mono);font-weight:600;font-size:var(--fs-0);color:var(--ink-1);
   overflow-wrap:anywhere}
-.l-what{font-size:var(--fs-0);color:var(--ink-2);min-width:0;overflow-wrap:anywhere}
+.l-what{font-size:var(--fs-0);color:var(--ink-2);min-width:0;overflow-wrap:break-word}
 .l-what strong{color:var(--ink-1);font-weight:650}
-.l-detail{display:block;font-size:var(--fs--1);color:var(--ink-3);margin-top:2px;overflow-wrap:anywhere}
+.l-detail{display:block;font-size:var(--fs--1);color:var(--ink-3);margin-top:2px;overflow-wrap:break-word}
 .l-flag{color:var(--ok);display:inline-flex;align-items:center;margin-top:2px}
 .l-flag.bad{color:var(--err)}
 
@@ -691,6 +696,9 @@ button.site-card{font:inherit;text-align:left;width:100%}
   .toasts{right:var(--sp-3);bottom:var(--sp-3)}
 }
 @media (prefers-reduced-motion:reduce){
+  /* The busy spinner stays readable, but the Sending dot has no reason to keep
+     pulsing when the user has asked for no motion. */
+  .dot,.pulse{animation:none!important}
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
   .spin,.spin-s{animation-duration:1.4s!important}  /* keep the busy signal readable */
 }
@@ -726,17 +734,32 @@ button.site-card{font:inherit;text-align:left;width:100%}
   #view-files .ed{flex:1;height:auto;min-height:280px}
 }
 
-/* ---- click-to-copy address ---- */
-.sc-url.copyurl{display:inline-flex;align-items:center;gap:var(--sp-2);background:none;border:0;padding:2px 0;
-  font:inherit;color:inherit;cursor:pointer;text-align:left;max-width:100%;min-width:0;overflow:hidden}
-/* The address must be allowed to truncate. Without this its min-content width
-   props the whole card open and pushes the layout off narrow screens. */
-.sc-url.copyurl .copytxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sc-url.copyurl .copyic{opacity:0;flex:none;transition:opacity .12s}
-.sc-url.copyurl:hover .copyic,.sc-url.copyurl:focus-visible .copyic{opacity:.75}
-.sc-url.copyurl.copied{color:var(--ok)}
-.sc-url.copyurl.copied .copyic{opacity:1}
-@media (prefers-reduced-motion:reduce){.sc-url.copyurl .copyic{transition:none}}
+/* ---- click-to-copy (app name + address, cards and Files header) ----
+   The copy icon is ALWAYS visible — hover-only was missed entirely.
+   No font declarations here: each host class (.sc-domain / .sc-url / .chip)
+   already sets its own family and size, and `font:inherit` would override
+   them from the end of the sheet. */
+.copybtn{display:inline-flex;align-items:center;gap:var(--sp-2);background:none;border:0;padding:2px 0;
+  color:inherit;cursor:pointer;text-align:left;max-width:100%;min-width:0;overflow:hidden;
+  border-radius:var(--r-0)}
+/* The text must be allowed to truncate. Without this its min-content width
+   props the whole card open and pushes the layout off narrow screens.
+   user-select:text keeps the failure path usable: when copying is refused,
+   the text is programmatically selected for a hand copy. */
+.copybtn .copytxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.copybtn .copyic{opacity:.55;flex:none;transition:opacity .12s}
+.copybtn:hover .copyic,.copybtn:focus-visible .copyic{opacity:1}
+.copybtn .okic{display:none;flex:none;color:var(--ok)}
+.copybtn.copied{color:var(--ok)}
+.copybtn.copied .copyic{display:none}
+.copybtn.copied .okic{display:inline-block;animation:pop .18s ease}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+/* chip-shaped copy buttons (Files header) keep the chip look */
+.chip.copybtn{background:var(--bg-2);border:var(--bw) solid var(--line-1);padding:var(--sp-1) var(--sp-3);
+  color:var(--ink-3);transition:border-color .13s,color .13s}
+.chip.copybtn:hover{border-color:var(--accent-line);color:var(--ink-1)}
+.chip.copybtn.copied{color:var(--ok);border-color:var(--ok)}
+.chip.copybtn .copytxt{max-width:36ch}
 
 /* ---- where an update went ---- */
 /* Let the destination list WRAP. Forcing it onto one line gave it a huge
@@ -753,6 +776,74 @@ button.site-card{font:inherit;text-align:left;width:100%}
 .r-main>*{min-width:0;max-width:100%}
 .r-where .ic{flex:none;opacity:.7}
 .batch-where{font-size:var(--fs--1);color:var(--ink-2)}
+
+/* ============================================================
+   v6: MANY FILES + FOLDERS on the Deploy screen
+   ============================================================ */
+/* A grid item's min-width defaults to AUTO = min-content, so one long nowrap
+   filename in the list would prop the whole ops column past the viewport —
+   the same trap as the activity list in v4. min-width:0 on the item (and on
+   the panels, which become the items themselves on ultrawide's
+   display:contents) lets the fixed track win and the names truncate. */
+.ops,.ops>.panel{min-width:0}
+.pickrow{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin:0 0 var(--sp-4)}
+.fileset{margin:var(--sp-4) 0;border:var(--bw) solid var(--accent-line);border-radius:var(--r-2);
+  background:var(--bg-3);overflow:hidden}
+.fileset-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
+  padding:var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);border-bottom:var(--bw) solid var(--line-1)}
+.fs-count{font-weight:650;color:var(--ink-1);font-size:var(--fs-0);font-variant-numeric:tabular-nums}
+.filelist{list-style:none;margin:0;padding:var(--sp-2) var(--sp-3);max-height:min(38vh,340px);
+  overflow:auto;display:flex;flex-direction:column}
+.fl-row{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-1);min-height:var(--row-min)}
+.fl-row>.ic-s{color:var(--ink-4);flex:none}
+.fl-main{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.3}
+.fl-name{font-family:var(--mono);font-size:var(--fs-0);font-weight:600;color:var(--ink-1);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-path{font-size:var(--fs--2);color:var(--ink-3);font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-size{font-size:var(--fs--1);color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
+.fl-rm{min-height:var(--row-min);width:var(--row-min);min-width:var(--row-min)}
+.fileset-add{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;
+  padding:var(--sp-3) var(--sp-4);border-top:var(--bw) solid var(--line-1);
+  font-size:var(--fs--1);color:var(--ink-3)}
+
+/* ============================================================
+   v6: DRAG AND DROP
+   The overlay is purely visual (pointer-events:none) — the drop
+   itself is handled at window level, so "anywhere on the page"
+   is literally true.
+   ============================================================ */
+.drop-overlay{position:fixed;inset:0;z-index:90;display:grid;place-items:center;
+  background:rgba(4,6,10,.55);backdrop-filter:blur(2px);pointer-events:none;
+  opacity:0;visibility:hidden;transition:opacity .15s,visibility .15s}
+.drop-overlay.on{opacity:1;visibility:visible}
+.do-card{display:flex;flex-direction:column;align-items:center;gap:var(--sp-3);
+  padding:var(--sp-7) var(--sp-8);border:var(--bw-2) dashed var(--accent);border-radius:var(--r-3);
+  background:var(--bg-2);color:var(--accent);box-shadow:var(--el-3);
+  transform:scale(.96);transition:transform .15s}
+.drop-overlay.on .do-card{transform:scale(1)}
+.do-t{font-weight:650;font-size:var(--fs-2);color:var(--ink-1)}
+.do-s{color:var(--ink-3);font-size:var(--fs-0)}
+/* Files view: the pane being hovered answers the drag */
+.fv-treewrap.fv-drop,.fv-panewrap.fv-drop{border-color:var(--accent);
+  background:linear-gradient(var(--accent-dim),transparent 80%),var(--bg-2)}
+
+/* ============================================================
+   v6: MOTION — small, purposeful, one-shot. Nothing loops except
+   the busy indicators that already existed, and the global
+   prefers-reduced-motion rule in §10 kills all of it.
+   ============================================================ */
+@keyframes rise{from{opacity:0;transform:translateY(5px)}}
+.row-in{animation:rise .28s ease both}
+.batch-in{animation:rise .3s ease both}
+.anim-in .lrow{animation:rise .22s ease both}
+.pill{transition:background .25s,color .25s}
+.pill.swap{animation:pillin .3s ease}
+@keyframes pillin{from{opacity:0;transform:translateY(2px)}}
+.titem.flash-ok{animation:rowok 1s ease}
+.titem.flash-err{animation:rowerr 1s ease}
+@keyframes rowok{from{background:var(--ok-dim)}}
+@keyframes rowerr{from{background:var(--err-dim)}}
 </style>
 </head>
 <body>
@@ -791,6 +882,13 @@ button.site-card{font:inherit;text-align:left;width:100%}
 
 <div class="vh" id="srLive" role="status" aria-live="polite"></div>
 <div class="toasts" id="toasts"></div>
+<div class="drop-overlay" id="dropOverlay" aria-hidden="true">
+  <div class="do-card">
+    <svg class="ic ic-l" aria-hidden="true"><use href="#i-upload"/></svg>
+    <span class="do-t">Drop to add to the update</span>
+    <span class="do-s">Files and folders both work — up to 200 files and 30 MB in one go</span>
+  </div>
+</div>
 <dialog id="repoDlg" aria-label="Choose a repository"></dialog>
 <dialog id="fvDlg" aria-label="File action"></dialog>
 
@@ -848,7 +946,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
       <header class="view-head">
         <div>
           <h1 tabindex="-1">Update your websites</h1>
-          <p class="sub">Pick the apps, drop in the file, press Deploy. Undo is always one click away.</p>
+          <p class="sub">Pick the apps, drop in your files or folders, press Deploy. Undo is always one click away.</p>
         </div>
         <button type="button" class="btn btn-secondary" id="refreshBtn">
           <svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh from Heroku</button>
@@ -870,12 +968,13 @@ button.site-card{font:inherit;text-align:left;width:100%}
 
         <div class="ops">
           <section class="panel" aria-labelledby="sendH">
-            <h2 class="panel-title" id="sendH"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Send a file</h2>
+            <h2 class="panel-title" id="sendH"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Send files</h2>
             <div id="fileArea"></div>
             <button id="deployBtn" class="btn btn-primary btn-lg btn-block" type="button" disabled>
               <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span class="deploy-lbl">Deploy</span></button>
             <p class="hint" id="deployHint"></p>
-            <input type="file" id="fileInput" class="vh" aria-label="File to send" tabindex="-1">
+            <input type="file" id="fileInput" class="vh" multiple aria-label="Files to send" tabindex="-1">
+            <input type="file" id="fileDirInput" class="vh" webkitdirectory aria-label="Folder to send" tabindex="-1">
           </section>
           <section class="panel" aria-labelledby="actH">
             <div class="panel-head"><h2 class="panel-title" id="actH">Activity</h2></div>
@@ -929,7 +1028,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
       </header>
       <section class="panel" aria-labelledby="logH">
         <div class="panel-head"><h2 class="panel-title" id="logH"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>History</h2></div>
-        <div id="logBody"></div>
+        <div id="logBody" class="anim-in"></div>
       </section>
     </section>
 
@@ -973,13 +1072,13 @@ button.site-card{font:inherit;text-align:left;width:100%}
      embedded image. Do not add <img> tags by hand here. -->
 
 <template id="kb-send">
-  <p class="lead">Use this when you have a new or changed file — a page, a menu, a price list — and want it on one or more of your apps.</p>
+  <p class="lead">Use this when you have new or changed files — a page, a menu, a whole folder of assets — and want them on one or more of your apps, in one go.</p>
   <ol class="steps">
-    <li><strong>Pick the apps.</strong> Every card is one of your Heroku apps, pulled straight from your account, with its herokuapp.com address under the name. Tick each one you want to update; <em>Select all</em> ticks every app that has a repository. A card marked <em>Needs a repository</em> cannot be ticked — press <em>Choose a repository</em> on that card and it joins the list.
+    <li><strong>Pick the apps.</strong> Every card is one of your Heroku apps, pulled straight from your account, with its herokuapp.com address under the name — click the name or the address to copy it; the small copy mark next to each shows they are clickable. Tick each app you want to update; <em>Select all</em> ticks every app that has a repository. A card marked <em>Needs a repository</em> cannot be ticked — press <em>Choose a repository</em> on that card and it joins the list.
       <div class="kb-shot"><!--KB_SCREENSHOT:02-sites--></div></li>
-    <li><strong>Add the file.</strong> Drag it onto the <em>Send a file</em> box, or click the box and choose it from your computer. One file at a time.
+    <li><strong>Add the files.</strong> Drop files — or whole folders — <em>anywhere</em> on this screen; a large “drop to add” panel appears while you drag. Or press <em>Choose files</em> / <em>Choose a folder</em> in the <em>Send files</em> box. Everything you add is listed with its size and the place it will take inside each app (folders keep their structure). The small cross removes one item, <em>Clear</em> empties the list, and you can keep adding until you press Deploy. One update carries at most 200 files and 30 MB.
       <div class="kb-shot"><!--KB_SCREENSHOT:05-filechosen--></div></li>
-    <li><strong>Press Deploy.</strong> The button stays grey until you have ticked at least one app and added a file — that is normal, not broken.</li>
+    <li><strong>Press Deploy.</strong> The button spells out what is about to happen — for example <em>Deploy 12 files to 3 apps</em> — and stays grey until you have ticked at least one app and added at least one file. That is normal, not broken. Everything lands on each app as <strong>one</strong> recorded change and one rebuild.</li>
     <li><strong>Watch the Activity column.</strong> Each app moves through <em>Sending</em> → <em>Rebuilding</em> → <em>Live</em>.
       <div class="kb-shot"><!--KB_SCREENSHOT:08-done--></div></li>
   </ol>
@@ -1050,7 +1149,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
 <template id="kb-files">
   <p class="lead">Every app card on the Deploy screen carries a small folder chip under the app name. Press it and that app&rsquo;s repository opens in the <em>Files</em> screen: the folders on the left, the file you picked on the right. It works the same way the GitHub website does — browse, add, upload, rename, delete and edit — and every change is one recorded commit. The <em>Files</em> entry in the left rail goes to the same screen.</p>
   <h3>Browse</h3>
-  <p>Folders sit in the tree on the left — folders first, then files, A to Z. Click a folder to open it and see what is inside; click a file to open it on the right. The line above the file shows where you are, the file&rsquo;s size, and the repository and branch every change is written to.</p>
+  <p>Folders sit in the tree on the left — folders first, then files, A to Z. Click a folder to open it and see what is inside; click a file to open it on the right. The line above the file shows where you are, the file&rsquo;s size, and the repository and branch every change is written to. The app&rsquo;s name and address sit at the top of the tree — click either one to copy it.</p>
   <h3>Add a new file or folder</h3>
   <ol class="steps">
     <li>Open the folder where the new item belongs — what you add lands where you are browsing.</li>
@@ -1058,7 +1157,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
     <li>A new file opens straight in the editor, empty and ready to type. A new folder appears in the tree with a small placeholder file inside — repositories cannot hold a truly empty folder, so the panel puts one there for you and it does no harm.</li>
   </ol>
   <h3>Upload files, or a whole folder</h3>
-  <p><em>Upload files</em> takes one or more files from your computer and puts them in the folder you are looking at. <em>Upload folder</em> takes a <strong>complete folder</strong> — subfolders and all — and lands its contents where you are browsing, keeping the structure. Either way everything arrives as <strong>one</strong> recorded change, so the history stays clean.</p>
+  <p><em>Upload files</em> takes one or more files from your computer and puts them in the folder you are looking at. <em>Upload folder</em> takes a <strong>complete folder</strong> — subfolders and all — and lands its contents where you are browsing, keeping the structure. You can also simply <strong>drag files or folders from your computer</strong> and drop them on the tree or on the file pane: they land in the folder you are browsing, and a dropped folder keeps its name and everything inside it. Either way everything arrives as <strong>one</strong> recorded change, so the history stays clean.</p>
   <h3>Rename and delete</h3>
   <p>With a file open, <em>Rename</em> and <em>Delete</em> sit above it. Deleting needs two presses — the second press is the confirmation. To delete a whole folder, click the folder in the tree, then press <em>Delete folder</em>: the button tells you first how many files are inside, and that count is exactly what will be removed.</p>
   <h3>Edit and save</h3>
@@ -1106,7 +1205,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
 <template id="kb-words">
   <p class="lead">The screen uses a handful of words worth knowing. None of them require you to be technical.</p>
   <dl>
-    <dt>Deploy</dt><dd>Send the file and put it live. The whole job, one button.</dd>
+    <dt>Deploy</dt><dd>Send the files and put them live. The whole job, one button.</dd>
     <dt>App</dt><dd>One of your Heroku apps — a card on the Deploy screen, shown by its app name with its herokuapp.com address underneath. This is where you test your sites.</dd>
     <dt>Repository</dt><dd>The app’s storage on GitHub. A sent file is committed here, then the app rebuilds from it. An app without one shows <em>Needs a repository</em>.</dd>
     <dt>Pair</dt><dd>One GitHub account tied to one Heroku account. Pairs are made in <em>Settings → Accounts</em>, and they are what fills the Deploy screen with apps.</dd>
@@ -1117,7 +1216,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
     <dt>Live</dt><dd>Done. The change is on the internet.</dd>
     <dt>No repo</dt><dd>This app had no repository linked, so the file had nowhere to go. Link one and deploy again.</dd>
     <dt>Failed</dt><dd>One step did not finish. The message under the app says which one. See <em>If something goes wrong</em>.</dd>
-    <dt>Batch / update</dt><dd>One press of Deploy — one file sent to one set of apps. Undo works on a whole batch.</dd>
+    <dt>Batch / update</dt><dd>One press of Deploy — one set of files sent to one set of apps. Undo works on a whole batch.</dd>
     <dt>Keys</dt><dd>The passwords-for-machines (GitHub token, Heroku API key) that let this panel act on your accounts. They stay on the server.</dd>
     <dt>Activity log</dt><dd>The ledger in the left rail: who did what, when (in IST), and whether it worked.</dd>
     <dt>VA</dt><dd>Your assistant’s account. A VA can do everything except add or remove people.</dd>
@@ -1185,6 +1284,18 @@ function toast(msg,kind){
   setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),320);},4200);
 }
 const announce=t=>{$('#srLive').textContent=t;};
+/* uniform busy state for buttons that wait on the network */
+function busy(btn,on,label){
+  if(!btn)return;
+  if(on){
+    btn.dataset.prevHtml=btn.innerHTML;
+    btn.setAttribute('aria-busy','true');
+    btn.innerHTML='<span class="spin spin-s"></span>'+esc(label||'Working…');
+  }else{
+    btn.removeAttribute('aria-busy');
+    if(btn.dataset.prevHtml!==undefined){btn.innerHTML=btn.dataset.prevHtml;delete btn.dataset.prevHtml;}
+  }
+}
 
 /* ---------- app state ---------- */
 const normRole=r=>r==='owner'?'owner':'va';
@@ -1192,7 +1303,8 @@ const S={
   session:sessionStorage.getItem('dp_session'),
   role:normRole(sessionStorage.getItem('dp_role')),
   user:sessionStorage.getItem('dp_user'),
-  state:null, selected:new Set(), file:null,
+  state:null, selected:new Set(),
+  files:[],            /* the staged update: [{path, file}] — many files, kept until Deploy */
   batch:null, pollT:null,
   view:'deploy', kb:'send', tab:'accounts',
   repos:null,
@@ -1344,7 +1456,13 @@ const MOCK_API=(()=>{
   async function handle(path,opts={}){
     const method=opts.method||(opts.body?'POST':'GET');
     let body=opts.body||{};
-    if(body instanceof FormData){const o={};for(const[k,v]of body.entries())o[k]=v;body=o;}
+    /* repeated "file" fields must survive as a LIST — a plain object would
+       keep only the last one and a 12-file deploy would mock as 1 file */
+    if(body instanceof FormData){
+      const o={_files:[]};
+      for(const[k,v]of body.entries()){if(k==='file')o._files.push(v);else o[k]=v;}
+      body=o;
+    }
     const p=path.split('?')[0].split('/').filter(Boolean).slice(1); // after 'api'
 
     if(path==='/api/login'&&method==='POST'){
@@ -1361,7 +1479,12 @@ const MOCK_API=(()=>{
       me:db.me});
     if(path==='/api/deploy'){
       const ids=JSON.parse(body.sites).map(String);
-      const name=(body.file&&body.file.name)||'file';
+      let paths=[];try{paths=JSON.parse(body.paths||'[]');}catch(e){paths=[];}
+      const files=body._files||[];
+      const nFiles=Math.max(files.length,paths.length)||1;
+      const name=nFiles===1
+        ?(paths[0]||(files[0]&&files[0].name)||'file')
+        :nFiles+' files';
       return delay(startBatch(ids,name));
     }
     if(p[0]==='batch'){const b=db.batches[p[1]];if(!b)throw fail('That update could not be found.');return delay(pubB(b));}
@@ -1547,8 +1670,9 @@ function leave(callApi){
   if(callApi)api('/api/logout').catch(()=>{});
   clearTimeout(S.pollT);
   ['dp_session','dp_role','dp_user'].forEach(k=>sessionStorage.removeItem(k));
-  Object.assign(S,{session:null,role:null,user:null,state:null,batch:null,file:null,
-    selected:new Set(),repos:null,editing:null,armed:null,undoAsk:null,fv:null,bp:{}});
+  Object.assign(S,{session:null,role:null,user:null,state:null,batch:null,files:[],
+    selected:new Set(),repos:null,editing:null,armed:null,undoAsk:null,fv:null,bp:{},
+    _recentTop:undefined});
   showAuth();
 }
 async function refreshState(){
@@ -1646,13 +1770,31 @@ async function copyText(t){
     }catch(e2){ return false; }
   }
 }
+/* Capture phase, preventDefault + stopPropagation: a copy click inside a
+   card <label> must never tick the checkbox or open Files. On success the
+   CONTROL itself confirms (icon swaps to a tick, text turns green) — the
+   toast is secondary. On failure the text is selected so a hand copy is
+   one keystroke away, and the toast says exactly that. */
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-copy]'); if(!b) return;
   e.preventDefault(); e.stopPropagation();
   const ok=await copyText(b.dataset.copy);
-  if(ok){ b.classList.add('copied'); toast('Address copied.','ok');
-          setTimeout(()=>b.classList.remove('copied'),1200); }
-  else toast('Could not copy — select the address and copy it by hand.','err');
+  if(ok){
+    b.classList.add('copied');
+    toast(b.dataset.copyMsg||'Copied.','ok');
+    announce('Copied.');
+    clearTimeout(b._copyT);
+    b._copyT=setTimeout(()=>b.classList.remove('copied'),1400);
+  }else{
+    try{
+      const t=b.querySelector('.copytxt');
+      if(t){
+        const r=document.createRange();r.selectNodeContents(t);
+        const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);
+      }
+    }catch(err){}
+    toast('Copying is blocked here — the text is selected for you, press Ctrl+C (Cmd+C on a Mac).','err');
+  }
 },true);
 
 function renderSites(){
@@ -1663,15 +1805,18 @@ function renderSites(){
       :'No apps came back from Heroku. Press “Refresh from Heroku”, or check the pair in Settings → Accounts.')+'</p>';
     updateSelUI();return;
   }
+  /* both the NAME and the ADDRESS copy on click, with an always-visible
+     copy mark — hover-only was invisible enough that it read as broken */
+  const copyName=s=>`<button type="button" class="sc-domain copybtn" data-copy="${esc(s.app||s.label)}" data-copy-msg="App name copied." title="Click to copy the app name"><span class="copytxt">${esc(s.app||s.label)}</span>${ic('copy','ic ic-s copyic')}${ic('check','ic ic-s okic')}</button>`;
+  const copyAddr=s=>`<button type="button" class="sc-url copybtn" data-copy="${esc(s.app_url||s.url)}" data-copy-msg="Address copied." title="Click to copy this address"><span class="copytxt">${esc(stripProto(s.app_url||s.url))}</span>${ic('copy','ic ic-s copyic')}${ic('check','ic ic-s okic')}</button>`;
   grid.innerHTML=sites.map(s=>{
     const id=esc(String(s.id));
-    const addr=esc(stripProto(s.app_url||s.url));
     if(!s.linked)return `
     <div class="site-card nolink">
       <span class="cbox" aria-hidden="true">${ic('check','ic ic-s')}</span>
       <span class="sc-body">
-        <span class="sc-domain">${esc(s.app||s.label)}</span>
-        <button type="button" class="sc-url copyurl" data-copy="${esc(s.app_url||s.url)}" title="Click to copy this address"><span class="copytxt">${addr}</span>${ic('copy','ic ic-s copyic')}</button>
+        ${copyName(s)}
+        ${copyAddr(s)}
         <span class="sc-chips"><span class="sc-need">${ic('alert','ic ic-s')}Needs a repository</span></span>
         <button type="button" class="btn btn-secondary btn-sm sc-fix" data-act="pick-repo" data-id="${id}">${ic('link','ic ic-s')}Choose a repository</button>
       </span>
@@ -1682,8 +1827,8 @@ function renderSites(){
       <input type="checkbox" class="vh" value="${id}" ${S.selected.has(String(s.id))?'checked':''} aria-label="Update ${esc(s.app||s.label)}">
       <span class="cbox" aria-hidden="true">${ic('check','ic ic-s')}</span>
       <span class="sc-body">
-        <span class="sc-domain">${esc(s.app||s.label)}</span>
-        <button type="button" class="sc-url copyurl" data-copy="${esc(s.app_url||s.url)}" title="Click to copy this address"><span class="copytxt">${addr}</span>${ic('copy','ic ic-s copyic')}</button>
+        ${copyName(s)}
+        ${copyAddr(s)}
         <span class="sc-chips">
           <span class="chip">${ic('branch','ic ic-s')}${esc(s.owner)}/${esc(s.repo)}</span>
           <button type="button" class="chip chipbtn" data-act="open-files" data-id="${id}" title="Open the files of this app" aria-label="Open the files of ${esc(s.app||s.label)}">${ic('folder','ic ic-s')}${esc(s.dir)}</button>
@@ -1793,67 +1938,142 @@ function openRepoPicker(appId){
   });
 }
 
-/* ---- file + deploy ---- */
+/* ---- files + deploy — many files and whole folders in ONE update ---- */
+const MAX_DEPLOY_FILES=200;              /* the server enforces both of these; */
+const MAX_DEPLOY_BYTES=30*1048576;       /* the UI refuses first, with words   */
+const deployTotal=list=>list.reduce((a,it)=>a+it.file.size,0);
+function addDeployFiles(list){
+  if(!list||!list.length)return;
+  /* same path twice = the newer pick replaces the older one — say so rather
+     than letting a file quietly disappear from the set he thought he chose */
+  const map=new Map(S.files.map(it=>[it.path,it]));
+  const replaced=[],fresh=[];
+  for(const{rel,file}of list){
+    if(!rel)continue;
+    if(map.has(rel))replaced.push(rel); else fresh.push(rel);
+    map.set(rel,{path:rel,file});
+  }
+  const merged=[...map.values()];
+  if(merged.length>MAX_DEPLOY_FILES){
+    toast('That would make '+merged.length+' files — one update can carry at most '+MAX_DEPLOY_FILES+'. Nothing was added; send it in two updates.','err');
+    return;
+  }
+  if(deployTotal(merged)>MAX_DEPLOY_BYTES){
+    toast('That would make '+fmtBytes(deployTotal(merged))+' — one update can carry at most 30 MB. Nothing was added; send it in two updates.','err');
+    return;
+  }
+  S.files=merged;
+  S.freshFiles=new Set(fresh);          /* new rows animate in, like the other lists */
+  renderSend();
+  if(replaced.length){
+    toast(replaced.length===1
+      ? 'Replaced '+replaced[0]+' — a file with that path was already in this update.'
+      : replaced.length+' files replaced ones already in this update (same paths).','ok');
+  }
+  announce(S.files.length+' file'+(S.files.length===1?'':'s')+' ready to send.');
+}
 function renderSend(){
-  const area=$('#fileArea');
-  if(S.file){
+  const area=$('#fileArea'),nf=S.files.length;
+  const justAdded=S.freshFiles; S.freshFiles=null;   /* one-shot */
+  if(nf){
+    const total=deployTotal(S.files);
     area.innerHTML=`
-      <div class="filechip">
-        ${ic('file')}
-        <div class="fc-main">
-          <span class="fc-name">${esc(S.file.name)}</span>
-          <span class="fc-size">${fmtBytes(S.file.size)}</span>
+      <div class="fileset">
+        <div class="fileset-head">
+          <span class="fs-count">${nf} file${nf===1?'':'s'} · ${fmtBytes(total)}</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="filesClear">${ic('x','ic ic-s')}Clear</button>
         </div>
-        <button type="button" class="btn btn-ghost btn-ic" id="fileClear" aria-label="Remove file">${ic('x')}</button>
+        <ul class="filelist">${S.files.map((it,i)=>`
+          <li class="fl-row">
+            ${ic(IMG_EXT.has(extOf(it.file.name))?'image':'file','ic ic-s')}
+            <span class="fl-main">
+              <span class="fl-name">${esc(it.file.name)}</span>
+              <span class="fl-path" title="Will land at ${esc(it.path)} inside each app&#39;s folder">${esc(it.path)}</span>
+            </span>
+            <span class="fl-size">${fmtBytes(it.file.size)}</span>
+            <button type="button" class="btn btn-ghost btn-ic fl-rm" data-rm="${i}" aria-label="Remove ${esc(it.file.name)}">${ic('x','ic ic-s')}</button>
+          </li>`).join('')}</ul>
+        <div class="fileset-add">
+          <button type="button" class="btn btn-secondary btn-sm" data-pick="files">${ic('plus','ic ic-s')}Add files</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-pick="folder">${ic('folderplus','ic ic-s')}Add a folder</button>
+          <span>or drop more anywhere on this screen</span>
+        </div>
       </div>`;
-    $('#fileClear').addEventListener('click',()=>{S.file=null;renderSend();});
   }else{
     area.innerHTML=`
       <div class="drop" id="dropZone" role="button" tabindex="0"
-           aria-label="Choose the file to send — drop it here or press Enter to browse">
+           aria-label="Choose the files to send — drop files or folders here, or press Enter to browse">
         ${ic('upload','ic ic-l')}
-        <span class="drop-t">Drop the file here</span>
-        <span class="drop-s">or click to choose from your computer</span>
+        <span class="drop-t">Drop files or folders here</span>
+        <span class="drop-s">anywhere on this screen works — up to 200 files and 30 MB in one go</span>
+      </div>
+      <div class="pickrow">
+        <button type="button" class="btn btn-secondary btn-sm" data-pick="files">${ic('file','ic ic-s')}Choose files</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-pick="folder">${ic('folder','ic ic-s')}Choose a folder</button>
       </div>`;
-    const dz=$('#dropZone'),fi=$('#fileInput');
-    dz.addEventListener('click',()=>fi.click());
-    dz.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fi.click();}});
-    ['dragover','dragenter'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
-    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
-    dz.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)onFile(f);});
   }
   updateDeployBtn();
 }
-$('#fileInput').addEventListener('change',e=>{
-  const f=e.target.files[0];if(f)onFile(f);e.target.value='';
+/* delegated — renderSend swaps this area's contents on every change */
+$('#fileArea').addEventListener('click',e=>{
+  const pick=e.target.closest('[data-pick]');
+  if(pick){$(pick.dataset.pick==='folder'?'#fileDirInput':'#fileInput').click();return;}
+  if(e.target.closest('#filesClear')){S.files=[];renderSend();announce('File list cleared.');return;}
+  const rm=e.target.closest('[data-rm]');
+  if(rm){S.files.splice(Number(rm.dataset.rm),1);renderSend();return;}
+  if(e.target.closest('#dropZone'))$('#fileInput').click();
 });
-function onFile(f){S.file=f;renderSend();}
+$('#fileArea').addEventListener('keydown',e=>{
+  if(!e.target.closest('#dropZone'))return;
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#fileInput').click();}
+});
+$('#fileInput').addEventListener('change',e=>{
+  addDeployFiles([...e.target.files].map(f=>({rel:f.name,file:f})));
+  e.target.value='';
+});
+$('#fileDirInput').addEventListener('change',e=>{
+  /* the folder picker's webkitRelativePath starts with the picked folder's own
+     name — strip it, the same way the Files screen's Upload-folder does, so a
+     picked site folder deploys as index.html / assets/… , not mysite/… */
+  addDeployFiles([...e.target.files].map(f=>({
+    rel:f.webkitRelativePath?f.webkitRelativePath.split('/').slice(1).join('/'):f.name,
+    file:f})));
+  e.target.value='';
+});
 
 function batchRunning(){return!!(S.batch&&!S.batch.done);}
 function updateDeployBtn(){
-  const btn=$('#deployBtn'),hint=$('#deployHint'),n=S.selected.size;
+  const btn=$('#deployBtn'),hint=$('#deployHint'),n=S.selected.size,nf=S.files.length;
   const running=batchRunning();
-  btn.disabled=running||!n||!S.file;
-  { const l=document.querySelector('.deploy-lbl'); if(l) l.textContent=n?`Deploy to ${n} app${n>1?'s':''}`:'Deploy'; }
+  btn.disabled=running||!n||!nf;
+  { const l=document.querySelector('.deploy-lbl'); if(l) l.textContent=
+      nf&&n?`Deploy ${nf} file${nf>1?'s':''} to ${n} app${n>1?'s':''}`
+      :n?`Deploy to ${n} app${n>1?'s':''}`
+      :'Deploy'; }
   hint.textContent=running?'One update runs at a time — this one is still in progress.'
-    :(!n&&!S.file)?'Pick at least one app and add the file.'
+    :(!n&&!nf)?'Pick at least one app and add the files.'
     :!n?'Pick at least one app.'
-    :!S.file?'Add the file to send.'
-    :'Ready. The file goes to every ticked app.';
+    :!nf?'Add the files to send — drop them anywhere on this screen.'
+    :`Ready. ${nf===1?'The file goes':nf+' files go'} to every ticked app as one update.`;
 }
 $('#deployBtn').addEventListener('click',async()=>{
-  if(batchRunning()||!S.selected.size||!S.file)return;
+  if(batchRunning()||!S.selected.size||!S.files.length)return;
   const btn=$('#deployBtn');
   btn.setAttribute('aria-busy','true');
   btn.innerHTML='<span class="spin"></span>Deploying…';
   try{
+    /* ONE request. Every file rides as a repeated "file" field, and "paths"
+       is a JSON array in the SAME order — entry i is where file i lands
+       inside each app's configured folder. */
     const fd=new FormData();
-    fd.append('file',S.file);
+    for(const it of S.files)fd.append('file',it.file,it.file.name);
+    fd.append('paths',JSON.stringify(S.files.map(it=>it.path)));
     fd.append('sites',JSON.stringify([...S.selected]));
     fd.append('mode','auto');
+    const label=S.files.length===1?S.files[0].path:S.files.length+' files';
     const r=await api('/api/deploy',{body:fd});
-    S.batch={id:r.batch,targets:r.targets,done:false,undone:false,file:S.file.name,at:Date.now()};
-    S.file=null;S.undoAsk=null;
+    S.batch={id:r.batch,targets:r.targets,done:false,undone:false,file:label,at:Date.now(),fresh:true};
+    S.files=[];S.undoAsk=null;
     announce('Update started.');
     renderSend();renderActivity();
     schedulePoll(700);
@@ -1864,6 +2084,101 @@ $('#deployBtn').addEventListener('click',async()=>{
     updateDeployBtn();
   }
 });
+
+/* ======================================================================
+   DRAG AND DROP — anywhere on the Deploy screen, and onto the Files
+   panes. DataTransferItem entries are grabbed SYNCHRONOUSLY inside the
+   drop handler (webkitGetAsEntry returns null once the handler yields),
+   then the FileSystemEntry tree is walked async.
+   ====================================================================== */
+const hasDragFiles=e=>{
+  try{return Array.prototype.includes.call((e.dataTransfer&&e.dataTransfer.types)||[],'Files');}
+  catch(err){return false;}
+};
+/* readEntries returns at most ~100 entries per call — loop until empty */
+const readAllEntries=dr=>new Promise(res=>{
+  const all=[];
+  const step=()=>dr.readEntries(es=>{if(!es.length)res(all);else{all.push(...es);step();}},()=>res(all));
+  step();
+});
+async function walkEntry(entry,base){
+  if(entry.isFile)return new Promise(res=>entry.file(f=>res([{rel:base+entry.name,file:f}]),()=>res([])));
+  if(entry.isDirectory){
+    const out=[],kids=await readAllEntries(entry.createReader());
+    for(const k of kids)out.push(...await walkEntry(k,base+entry.name+'/'));
+    return out;
+  }
+  return[];
+}
+function grabDrop(dt){
+  const items=dt&&dt.items?[...dt.items]:[];
+  return{
+    entries:items.map(it=>typeof it.webkitGetAsEntry==='function'?it.webkitGetAsEntry():null).filter(Boolean),
+    files:dt&&dt.files?[...dt.files]:[]
+  };
+}
+async function resolveDrop(g,stripSingleRoot){
+  let out=[];
+  if(g.entries.length){
+    /* ONE folder dropped on Deploy means "put my site up": its contents
+       deploy at the root, without the wrapper folder's name — the same rule
+       as the folder picker. Everything else (mixed drops, Files-view drops)
+       keeps the full path relative to the drop, folder names included. */
+    if(stripSingleRoot&&g.entries.length===1&&g.entries[0].isDirectory){
+      const kids=await readAllEntries(g.entries[0].createReader());
+      for(const k of kids)out=out.concat(await walkEntry(k,''));
+    }else{
+      for(const en of g.entries)out=out.concat(await walkEntry(en,''));
+    }
+  }else{
+    out=g.files.map(f=>({rel:f.name,file:f}));
+  }
+  return out;
+}
+let dragDepth=0;
+function setDropOverlay(on){
+  $('#dropOverlay').classList.toggle('on',on);
+  const dz=$('#dropZone');if(dz)dz.classList.toggle('drag',on);
+}
+const deployDropReady=()=>!$('#shell').hidden&&S.view==='deploy';
+window.addEventListener('dragenter',e=>{
+  if(!hasDragFiles(e))return;
+  dragDepth++;
+  if(deployDropReady())setDropOverlay(true);
+});
+window.addEventListener('dragleave',e=>{
+  if(!hasDragFiles(e))return;
+  dragDepth=Math.max(0,dragDepth-1);
+  if(!dragDepth)setDropOverlay(false);
+});
+/* both unconditional: a drop that misses every target must never navigate
+   the page away to the dropped file */
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{
+  e.preventDefault();
+  dragDepth=0;setDropOverlay(false);
+  if(!deployDropReady())return;
+  const g=grabDrop(e.dataTransfer);          /* sync — see note above */
+  resolveDrop(g,true).then(list=>{if(list.length)addDeployFiles(list);});
+});
+/* Files view: dropping on the tree or the pane uploads into the folder
+   being browsed; a dropped folder keeps its name and structure. */
+function wireFilesDrop(el){
+  if(!el)return;
+  let depth=0;
+  const ok=()=>!$('#shell').hidden&&S.view==='files'&&S.fv&&!S.fv.loading&&!S.fv.error;
+  el.addEventListener('dragenter',e=>{if(!hasDragFiles(e)||!ok())return;depth++;el.classList.add('fv-drop');});
+  el.addEventListener('dragleave',e=>{if(!hasDragFiles(e))return;depth=Math.max(0,depth-1);if(depth<=0){depth=0;el.classList.remove('fv-drop');}});
+  el.addEventListener('drop',e=>{
+    depth=0;el.classList.remove('fv-drop');
+    if(!hasDragFiles(e)||!ok())return;
+    e.preventDefault();
+    const g=grabDrop(e.dataTransfer);        /* sync — see note above */
+    resolveDrop(g,false).then(list=>{if(list.length)fvUploadEntries(list);});
+  });
+}
+wireFilesDrop(document.querySelector('#view-files .fv-treewrap'));
+wireFilesDrop(document.querySelector('#view-files .fv-panewrap'));
 
 function schedulePoll(ms){clearTimeout(S.pollT);S.pollT=setTimeout(pollBatch,ms);}
 async function pollBatch(){
@@ -1891,7 +2206,10 @@ const STATUS={
   no_app:{t:'No repo',i:ic('alert','ic ic-s')},
   skipped:{t:'Skipped',i:''}
 };
-const pill=st=>{const m=STATUS[st]||{t:st,i:''};return `<span class="pill p-${esc(st)}">${m.i}${esc(m.t)}</span>`;};
+/* remembers each target's last painted status so a change CROSS-FADES
+   instead of snapping, and only the row that changed gets a flash */
+const _pillPrev={};
+const pill=(st,swap)=>{const m=STATUS[st]||{t:st,i:''};return `<span class="pill p-${esc(st)}${swap?' swap':''}">${m.i}${esc(m.t)}</span>`;};
 function counts(ts){
   return{live:ts.filter(t=>t.status==='live').length,
          failed:ts.filter(t=>t.status==='failed').length,
@@ -1935,7 +2253,7 @@ function renderActivity(){
           </div>`)
       :'';
     bb.innerHTML=`
-      <div class="batch${b.done&&c.failed?' attn':''}">
+      <div class="batch${b.done&&c.failed?' attn':''}${b.fresh?' batch-in':''}">
         <div class="batch-head">
           <span class="batch-file">${esc(b.file)}</span>
           ${b.targets&&b.targets.length?`<span class="batch-where">to ${esc(b.targets.map(t=>t.label).join(', '))}</span>`:''}
@@ -1944,25 +2262,35 @@ function renderActivity(){
         ${b.undone?`<p class="undone-note">${ic('undo','ic ic-s')}This update was undone — the previous version is back.</p>`:''}
         <p class="sumline">${summaryHTML(b.targets,b.done)}</p>
         ${!b.done?`<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Update progress: ${doneN} of ${total} apps done"><i style="width:${pct}%"></i></div>`:''}
-        <div>${b.targets.map(t=>`
-          <div class="titem">
-            <div class="trow"><span class="dom">${esc(t.label)}</span>${pill(t.status)}</div>
+        <div>${b.targets.map(t=>{
+          const key=b.id+':'+t.site_id,prev=_pillPrev[key];
+          const swap=prev!==undefined&&prev!==t.status;
+          _pillPrev[key]=t.status;
+          const flash=swap&&t.status==='live'?' flash-ok'
+            :swap&&(t.status==='failed'||t.status==='no_app')?' flash-err':'';
+          return `
+          <div class="titem${flash}">
+            <div class="trow"><span class="dom">${esc(t.label)}</span>${pill(t.status,swap)}</div>
             ${t.status==='failed'&&t.detail?`<p class="tdetail err">${esc(t.detail)}</p>`:''}
             ${t.status==='no_app'&&t.detail?`<p class="tdetail dim">${esc(t.detail)}</p>`:''}
             ${t.status==='failed'&&t.build_url?`<a class="tlink" href="${esc(t.build_url)}" target="_blank" rel="noopener">Open the build log ${ic('ext','ic ic-s')}</a>`:''}
             ${t.status==='live'?`<a class="tlink" href="${esc(t.url)}" target="_blank" rel="noopener">Open site ${ic('ext','ic ic-s')}</a>`:''}
-          </div>`).join('')}</div>
+          </div>`;}).join('')}</div>
         ${undoUI}
       </div>`;
+    b.fresh=false;  /* the arrival animation plays once, not on every poll repaint */
   }else{
     bb.innerHTML='<p class="empty">No update running. Pick apps, add a file, press Deploy.</p>';
   }
-  /* recent — history only, no duplicated controls */
+  /* recent — history only, no duplicated controls. A row that was not there
+     on the previous paint slides in briefly; the first paint stays still. */
   const rec=S.state.recent||[];
+  const newTop=!!(rec.length&&S._recentTop!==undefined&&String(rec[0].id)!==String(S._recentTop));
+  S._recentTop=rec.length?rec[0].id:S._recentTop;
   rb.innerHTML=rec.length?`
     <h3 class="mini-h">Recent</h3>
-    ${rec.map(r=>`
-      <div class="rrow">
+    ${rec.map((r,ri)=>`
+      <div class="rrow${ri===0&&newTop?' row-in':''}">
         ${ic('clock')}
         <div class="r-main">
           <span class="r-file">${esc(r.file)}</span>
@@ -2108,8 +2436,15 @@ function renderFiles(){
         <span class="bp-sub">Make it deployable adds one small index.php that serves your existing index.html. Your pages are not touched.</span></span>
       <button type="button" class="btn btn-primary btn-sm" id="fvMakeDep">Make it deployable</button>
     </div>`:'';
+  /* the Files header carries the same click-to-copy pair as the Deploy cards:
+     the app's NAME and its ADDRESS, copy mark always visible */
+  const fvSite=((S.state&&S.state.sites)||[]).find(x=>String(x.id)===String(S.fv.appId));
+  const fvName=S.fv.app||(fvSite&&(fvSite.app||fvSite.label))||S.fv.repo||'';
+  const fvUrl=(fvSite&&(fvSite.app_url||fvSite.url))||'';
   $('#fvRepoLine').innerHTML=
-    `<span class="chip">${ic('branch','ic ic-s')}${esc(S.fv.repo)}</span>`
+    `<button type="button" class="chip chipbtn copybtn" data-copy="${esc(fvName)}" data-copy-msg="App name copied." title="Click to copy the app name">${ic('copy','ic ic-s copyic')}${ic('check','ic ic-s okic')}<span class="copytxt">${esc(fvName)}</span></button>`
+    +(fvUrl?`<button type="button" class="chip chipbtn copybtn" data-copy="${esc(fvUrl)}" data-copy-msg="Address copied." title="Click to copy this address">${ic('copy','ic ic-s copyic')}${ic('check','ic ic-s okic')}<span class="copytxt">${esc(stripProto(fvUrl))}</span></button>`:'')
+    +`<span class="chip">${ic('branch','ic ic-s')}${esc(S.fv.repo)}</span>`
     +`<span class="chip">${esc(S.fv.branch)}</span>`
     +(bp?`<span class="bp-quiet">${ic('check','ic ic-s')}Heroku will build this as ${esc(BP_NAME[bp]||bp)}</span>`:'')
     +(S.fv.truncated?'<span class="p-dim">Large repository — the list may be incomplete.</span>':'');
@@ -2435,21 +2770,29 @@ function fvPrompt(title,label,def,cb){
   });
 }
 
-async function fvUpload(fileList,stripRoot){
+/* one-shot arrival animation on the rows that were just added or changed —
+   never on a whole re-rendered list */
+function flashPaths(paths){
+  if(!window.CSS||!CSS.escape)return;
+  for(const p of(paths||[])){
+    let sel;
+    try{sel='[data-file="'+CSS.escape(p)+'"],[data-gofile="'+CSS.escape(p)+'"],[data-dir="'+CSS.escape(p)+'"],[data-godir="'+CSS.escape(p)+'"]';}
+    catch(e){continue;}
+    $$(sel,$('#view-files')).forEach(el=>{
+      el.classList.remove('row-in');void el.offsetWidth;el.classList.add('row-in');
+    });
+  }
+}
+async function fvUploadEntries(list){
   if(!S.fv||S.fv.loading||S.fv.error)return;
-  const files=[...fileList];
-  if(!files.length)return;
-  announce('Uploading '+files.length+' file'+(files.length===1?'':'s')+'.');
+  const clean=(list||[]).filter(it=>it&&it.rel&&it.file);
+  if(!clean.length)return;
+  announce('Uploading '+clean.length+' file'+(clean.length===1?'':'s')+'.');
   const items=[];
-  for(const f of files){
-    let rel=stripRoot&&f.webkitRelativePath
-      ?f.webkitRelativePath.split('/').slice(1).join('/')
-      :f.name;
-    if(!rel)continue;
-    const buf=await f.arrayBuffer();
+  for(const{rel,file}of clean){
+    const buf=await file.arrayBuffer();
     items.push({path:(S.fv.cwd?S.fv.cwd+'/':'')+rel,contentB64:bufToB64(buf),size:buf.byteLength});
   }
-  if(!items.length)return;
   try{
     await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{
       message:'Upload '+items.length+' file'+(items.length===1?'':'s'),
@@ -2457,8 +2800,16 @@ async function fvUpload(fileList,stripRoot){
     items.forEach(it=>fvAddEntry(it.path,it.size));
     if(S.fv.cwd)fvOpenParents(S.fv.cwd);
     renderFiles();
+    flashPaths(items.map(it=>it.path));
     toast('Uploaded '+items.length+' file'+(items.length===1?'':'s')+' as one change.','ok');
   }catch(ex){toast(ex.message,'err');}
+}
+function fvUpload(fileList,stripRoot){
+  fvUploadEntries([...fileList].map(f=>({
+    rel:stripRoot&&f.webkitRelativePath
+      ?f.webkitRelativePath.split('/').slice(1).join('/')
+      :(f.webkitRelativePath||f.name),
+    file:f})));
 }
 
 /* ---- files view: wiring (delegated, static elements) ---- */
@@ -2511,6 +2862,7 @@ $('#fvPaneHead').addEventListener('click',e=>{
       fvRemoveUnder(old);fvAddEntry(np,size);
       S.fv.open=np;S.fv.cwd=parentOf(np);
       renderFiles();
+      flashPaths([np]);
       toast('Renamed to '+name+'.','ok');
     });
     return;
@@ -2562,6 +2914,7 @@ $('#fvNewFile').addEventListener('click',()=>{
     S.fv.fileData={contentB64:'',size:0,sha:null};
     if(parentOf(path))fvOpenParents(parentOf(path));
     renderFiles();
+    flashPaths([path]);
     toast('Created '+name+' — it is open in the editor.','ok');
   });
 });
@@ -2576,6 +2929,7 @@ $('#fvNewFolder').addEventListener('click',()=>{
     fvOpenParents(dir);
     S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;S.fv.cwd=dir;
     renderFiles();
+    flashPaths([dir,keep]);
     toast('Folder created — a small placeholder file keeps it in the repository.','ok');
   });
 });
@@ -2826,11 +3180,13 @@ function renderAccountsTab(){
     }catch(ex){toast(ex.message,'err');btn.removeAttribute('aria-busy');btn.innerHTML=ic('link')+'Pair them';}
   });
   $('#pwForm').addEventListener('submit',async e=>{
-    e.preventDefault();const f=e.target;
+    e.preventDefault();const f=e.target,btn=f.querySelector('button[type=submit]');
+    busy(btn,true,'Changing…');
     try{
       await api('/api/password',{body:{old:f.old.value,new:f.new.value}});
       toast('Password changed.','ok');f.reset();
     }catch(ex){toast(ex.message,'err');}
+    finally{busy(btn,false);}
   });
 }
 
@@ -2921,19 +3277,23 @@ function renderCreateTab(){
       </section>
     </div>`;
   $('#newRepoForm').addEventListener('submit',async e=>{
-    e.preventDefault();const f=e.target;
+    e.preventDefault();const f=e.target,btn=f.querySelector('button[type=submit]');
+    busy(btn,true,'Creating…');
     try{
       await api('/api/repo/create',{body:{name:f.name.value.trim(),private:f.private.checked}});
       S.repos=null;toast('Repository created. Link an app to it when you are ready.','ok');f.reset();f.private.checked=true;
     }catch(ex){toast(ex.message,'err');}
+    finally{busy(btn,false);}
   });
   $('#newAppForm').addEventListener('submit',async e=>{
-    e.preventDefault();const f=e.target;
+    e.preventDefault();const f=e.target,btn=f.querySelector('button[type=submit]');
+    busy(btn,true,'Creating…');
     try{
       await api('/api/app/create',{body:{name:f.name.value.trim()}});
       await refreshState();
       toast('App created. It is on the Deploy screen now — choose its repository there or on the Apps tab.','ok');f.reset();
     }catch(ex){toast(ex.message,'err');}
+    finally{busy(btn,false);}
   });
 }
 
@@ -2964,11 +3324,12 @@ function renderPeopleTab(){
       </section>
     </div>`;
   $('#addUserForm').addEventListener('submit',async e=>{
-    e.preventDefault();const f=e.target;
+    e.preventDefault();const f=e.target,btn=f.querySelector('button[type=submit]');
+    busy(btn,true,'Adding…');
     try{
       await api('/api/user',{body:{username:f.username.value.trim(),password:f.password.value,role:f.role.value}});
       await refreshState();toast('Added. Send them the address and their sign-in details.','ok');renderSettings();
-    }catch(ex){toast(ex.message,'err');}
+    }catch(ex){toast(ex.message,'err');busy(btn,false);}
   });
 }
 

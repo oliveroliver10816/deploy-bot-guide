@@ -392,3 +392,33 @@ now reproduces each of the four.
 
 **Tests:** node **126 panel + 69 bot**; browser `wide.py`, `v3.py`, `v4check`, `v5.py`.
 **Shipped `deploy-panel-v5.zip`** (release `panel-v5`); `panel/VERSION` → 6.
+
+
+## v6 (2026-08-13) — drag-drop, multi-file/folder deploys, copy, animation
+
+His four asks, all shipped and **reviewed BEFORE publishing this time**.
+
+- **Copy.** He reported it not working; it worked in a controlled browser, so rather than argue I made
+  **both the app NAME and the URL** copyable, on the Deploy cards and in the Files header, with an
+  always-visible icon (it had been hover-only, which is why he never saw it), a `copied` state on the
+  control itself, an `execCommand` fallback, and — if both are refused — the text is **selected** with
+  a message saying to press Ctrl+C. Verified: clicking never ticks the card or opens Files.
+- **Drag and drop anywhere** on the Deploy view (proven by dropping on the left rail), plus onto the
+  Files tree/pane which uploads into the folder being browsed. **Folders walk recursively** through
+  `webkitGetAsEntry` including Chrome's ~100-entry `readEntries` batching. A missed drop is
+  `preventDefault`ed so the browser never navigates away.
+- ⭐ **Many files AND whole folders in ONE update** — the "bummer". `/api/deploy` now takes repeated
+  `file` parts plus a `paths` array in the same order; the server writes them as **one commit and one
+  build per app** via the Git Data API. Staged list is removable with per-file destination paths, a
+  total, and a Clear. Caps 200 files / 30 MB, refused **all-or-nothing** so a set is never half-staged.
+- **Animation by Fable:** press, waiting (`aria-busy` + spinner), status cross-fades, arrival of new
+  rows, drop overlay. Collapsed under `prefers-reduced-motion`, **nothing on the sign-in first paint**,
+  and **zero running animations once idle** (verified over 577 rAF frames).
+
+The review PASSED with no blocking problems and four cosmetic notes, all then fixed: the staged list
+did not animate in, the subtitle still said "the file" (singular), a same-path replacement happened
+silently (now announced), and the Sending dot kept pulsing under reduced motion.
+
+**Tests:** node **133 panel + 69 bot**; browser `wide.py`, `v3.py`, `v4.py`, `v5.py`, `v6.py`.
+**Shipped `deploy-panel-v6.zip`** (release `panel-v6`); `panel/VERSION` → 7.
+⚠️ First paint measured: FCP 64 ms, 0 sub-resources, 0 long tasks.
