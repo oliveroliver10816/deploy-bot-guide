@@ -166,34 +166,49 @@ async function appRow(env, repoId) {
  * repo contents go GitHub -> Heroku directly, and only fall back to pulling the
  * archive through this Worker if that fails (the signed link is short-lived).
  */
-async function deployOne(env, batchId, site, bytes, fileName, mode, who) {
+async function deployOne(env, batchId, site, files, mode, who) {
   const setT = (fields, ...vals) =>
     q(env, `UPDATE batch_targets SET ${fields} WHERE batch_id=? AND repo_id=?`, ...vals, batchId, site.id).run();
 
   try {
-    const path = safeJoin(site.dir || "", fileName);
-    const prev = await GH.getFileSha(site.gh_token, site.owner, site.name, site.branch, path, fetch);
+    // Every selected file and folder lands in ONE commit per app. Sending them
+    // one at a time would make a folder of 20 files 20 commits and 20 builds.
+    const base = String(site.dir || "").replace(/^\/+|\/+$/g, "");
+    const prepared = [];
+    for (const f of files) {
+      const rel = String(f.rel || f.name).replace(/^\/+/, "");
+      if (rel.split("/").some((seg) => seg === ".." || seg === "")) {
+        throw new Error(`Invalid path in the upload: ${rel}`);
+      }
+      const path = base ? `${base}/${rel}` : rel;
+      if (path.length > 400) throw new Error(`That path is too long: ${path}`);
+      prepared.push({ path, contentB64: toBase64(f.bytes) });
+    }
 
-    if (mode === "new" && prev) throw new Error(`${path} already exists here.`);
-    if (mode === "replace" && !prev) throw new Error(`${path} does not exist yet, so there is nothing to replace.`);
+    // mode still applies, judged on the first file so the messages stay plain
+    const first = prepared[0];
+    const prev = await GH.getFileSha(site.gh_token, site.owner, site.name, site.branch, first.path, fetch);
+    if (mode === "new" && prev) throw new Error(`${first.path} already exists here.`);
+    if (mode === "replace" && !prev) throw new Error(`${first.path} does not exist yet, so there is nothing to replace.`);
 
-    const commit = await GH.putFile(site.gh_token, {
-      owner: site.owner, repo: site.name, branch: site.branch, path,
-      contentB64: toBase64(bytes),
-      message: `${prev ? "Update" : "Add"} ${path} (panel, ${who})`,
-      sha: prev || undefined,
+    const label = prepared.length === 1
+      ? `${prev ? "Update" : "Add"} ${first.path}`
+      : `Update ${prepared.length} files`;
+
+    const res = await GH.commitChanges(site.gh_token, {
+      owner: site.owner, repo: site.name, branch: site.branch,
+      message: `${label} (panel, ${who})`, files: prepared,
     }, fetch);
 
-    await setT("path=?, commit_sha=?, prev_blob_sha=?, new_blob_sha=?, status='building'",
-      path, commit.commitSha, prev, commit.blobSha);
+    await setT("path=?, commit_sha=?, prev_blob_sha=?, status='building'",
+      prepared.length === 1 ? first.path : `${prepared.length} files`, res.commitSha, prev);
 
     const app = await appRow(env, site.id);
     if (!app) {
       await setT("status='no_app', detail=?, finished_at=?", "Committed. No Heroku app linked.", nowIso());
       return;
     }
-
-    const build = await startBuild(env, site, app, commit.commitSha);
+    const build = await startBuild(env, site, app, res.commitSha);
     await setT("build_id=?, build_url=?, status=?", build.id, app.web_url || null,
       build.status === "failed" ? "failed" : "building");
   } catch (e) {
@@ -219,11 +234,11 @@ async function startBuild(env, site, app, version) {
   return HK.deploy(app.hk_token, app.heroku_name, tar, version, fetch);
 }
 
-export async function runBatch(env, batchId, siteIds, bytes, fileName, mode, who) {
+export async function runBatch(env, batchId, siteIds, files, fileName, mode, who) {
   for (const id of siteIds) {
     const site = await siteRow(env, id);
     if (!site) continue;
-    await deployOne(env, batchId, site, bytes, fileName, mode, who);
+    await deployOne(env, batchId, site, files, mode, who);
   }
   const c = await q(env,
     `SELECT SUM(status='failed') AS failed, COUNT(*) AS n FROM batch_targets WHERE batch_id=?`, batchId).first();
@@ -570,18 +585,38 @@ export async function handlePanel(env, request, ctx, path) {
   if (route === "deploy" && request.method === "POST") {
     let form;
     try { form = await request.formData(); } catch { return err(env, request, "Upload was not readable."); }
-    const file = form.get("file");
-    if (!file || typeof file === "string") return err(env, request, "No file was attached.");
+
+    // Many files and whole folders at once. The browser sends every File under
+    // the same field; `paths` carries each one's path relative to what he
+    // dropped, so a folder keeps its shape.
+    const blobs = form.getAll("file").filter((f) => f && typeof f !== "string");
+    if (!blobs.length) return err(env, request, "No files were attached.");
+    let rels = [];
+    try { rels = JSON.parse(String(form.get("paths") || "[]")); } catch { rels = []; }
+
     let siteIds;
     try { siteIds = JSON.parse(String(form.get("sites") || "[]")).map(Number).filter(Boolean); }
-    catch { return err(env, request, "Could not read which sites you picked."); }
-    if (!siteIds.length) return err(env, request, "Pick at least one site.");
+    catch { return err(env, request, "Could not read which apps you picked."); }
+    if (!siteIds.length) return err(env, request, "Pick at least one app.");
     if (siteIds.length > MAX_SITES_PER_BATCH) {
-      return err(env, request, `Up to ${MAX_SITES_PER_BATCH} sites at once. You picked ${siteIds.length}.`);
+      return err(env, request, `Up to ${MAX_SITES_PER_BATCH} apps at once. You picked ${siteIds.length}.`);
     }
     const mode = ["auto", "replace", "new"].includes(String(form.get("mode"))) ? String(form.get("mode")) : "auto";
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const fileName = (file.name || "file").split("/").pop();
+
+    if (blobs.length > 200) return err(env, request, `That is ${blobs.length} files. Send up to 200 at a time.`);
+    const files = [];
+    let total = 0;
+    for (let i = 0; i < blobs.length; i++) {
+      const b = blobs[i];
+      const bytes = new Uint8Array(await b.arrayBuffer());
+      total += bytes.length;
+      if (total > 30 * 1024 * 1024) {
+        return err(env, request, "That is more than 30 MB in one go. Send it in smaller batches.");
+      }
+      const name = String(b.name || `file-${i + 1}`).split("/").pop();
+      files.push({ bytes, name, rel: String(rels[i] || name) });
+    }
+    const fileName = files.length === 1 ? files[0].name : `${files.length} files`;
 
     const batchId = randomToken().slice(0, 16);
     await q(env, `INSERT INTO batches (id, who, file_name, mode, created_at) VALUES (?,?,?,?,?)`,
@@ -622,7 +657,7 @@ export async function handlePanel(env, request, ctx, path) {
       `${targets.length} app(s): ${targets.map((t) => t.label).join(", ")}`);
 
     // Answer immediately; the browser polls /api/batch/{id}.
-    ctx.waitUntil(runBatch(env, batchId, repoIds, bytes, fileName, mode, me.username));
+    ctx.waitUntil(runBatch(env, batchId, repoIds, files, fileName, mode, me.username));
     return json(env, request, { batch: batchId, targets });
   }
 

@@ -68,9 +68,16 @@ async function ready(h, m, byName, appName, repoName = "site-one", dir = "public
   return byName[appName].id;
 }
 
+/** One file, or many: pass [{name, content, rel}] as `name`. */
 const upload = (name, content, sites, mode = "auto") => {
   const f = new FormData();
-  f.append("file", new File([content], name));
+  const items = Array.isArray(name) ? name : [{ name, content }];
+  const rels = [];
+  for (const it of items) {
+    f.append("file", new File([it.content ?? ""], it.name));
+    rels.push(it.rel || it.name);
+  }
+  f.append("paths", JSON.stringify(rels));
   f.append("sites", JSON.stringify(sites));
   f.append("mode", mode);
   return f;
@@ -230,11 +237,14 @@ console.log("\n── deploy fan-out ──");
   ok(r.status === 200 && !!r.body.batch, "deploy returns a batch id immediately");
   ok(r.body.targets.length === 2, "both apps are queued", JSON.stringify(r.body.targets));
 
-  const puts = h.calls.filter((c) => c.method === "PUT" && c.url.includes("/contents/"));
-  ok(puts.length === 2, "one commit per selected app", `saw ${puts.length}`);
-  ok(puts.every((p) => JSON.parse(p.body).content === Buffer.from("<new>new page</new>").toString("base64")),
+  const commits = h.calls.filter((c) => c.method === "POST" && c.url.endsWith("/git/commits"));
+  ok(commits.length === 2, "one commit per selected app", `saw ${commits.length}`);
+  const blobs = h.state.blobsWritten.slice(-2);
+  ok(blobs.every((b) => Buffer.from(b.content, "base64").toString() === "<new>new page</new>"),
      "the same exact bytes went to every app's repo");
-  ok(puts.every((p) => p.url.includes("public/index.html")), "each used its own configured folder");
+  const trees = h.state.treesWritten.slice(-2);
+  ok(trees.every((t) => t.tree.every((e) => e.path === "public/index.html")),
+     "each used its own configured folder", JSON.stringify(trees.map((t) => t.tree.map((e) => e.path))));
 
   const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
   ok(st.body.targets.every((t) => ["building", "live", "no_app"].includes(t.status)),
@@ -250,9 +260,41 @@ console.log("\n── deploy fan-out ──");
   // GitHub caches BRANCH archives, so a branch tarball taken right after a push
   // can be the previous snapshot. The archive must be pinned to the new commit.
   const tarReq = h.calls.find((c) => c.url.includes("/tarball/"));
-  ok(!!tarReq && tarReq.url.endsWith("/tarball/commitABC"),
+  ok(!!tarReq && tarReq.url.endsWith("/tarball/commitNEW"),
      "the build archive is pinned to the commit just made, not to the branch",
      tarReq ? tarReq.url : "no tarball request");
+}
+
+console.log("\n── many files and folders at once ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  const a1 = await ready(h, m, byName, "site-one", "site-one");
+  h.state.blobsWritten.length = 0; h.state.commitsWritten.length = 0; h.state.treesWritten.length = 0;
+
+  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload([
+    { name: "index.html", content: "<h1>home</h1>" },
+    { name: "style.css",  content: "body{}", rel: "assets/style.css" },
+    { name: "app.js",     content: "//js",   rel: "assets/js/app.js" },
+  ], null, [a1]) });
+  ok(r.status === 200, "several files and a folder can be sent together", JSON.stringify(r.body).slice(0, 120));
+  ok(h.state.commitsWritten.length === 1, "as ONE commit, not one per file", String(h.state.commitsWritten.length));
+  ok(h.state.blobsWritten.length === 3, "every file is stored", String(h.state.blobsWritten.length));
+  const paths = h.state.treesWritten[0].tree.map((x) => x.path).sort();
+  ok(paths.join(",") === "public/assets/js/app.js,public/assets/style.css,public/index.html",
+     "the folder structure is kept under the app's target folder", paths.join(","));
+
+  const builds = h.calls.filter((c) => c.url.includes("/builds") && c.method === "POST");
+  ok(builds.length === 1, "and it triggers a single build", String(builds.length));
+
+  const st = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(/3 files/.test(st.recent[0].file), "the activity list says how many files went", String(st.recent[0].file));
+
+  const bad = await call(h, "POST", "/api/deploy", { token: m, form: upload([
+    { name: "x.html", content: "x", rel: "../../escape.html" }], null, [a1]) });
+  const bst = await call(h, "GET", `/api/batch/${bad.body.batch}`, { token: m });
+  ok(bst.body.targets[0].status === "failed" && /Invalid path/i.test(bst.body.targets[0].detail || ""),
+     "a path that escapes the repo is refused", bst.body.targets[0].detail || "");
 }
 
 console.log("\n── an app with no repository ──");
@@ -497,7 +539,7 @@ console.log("\n── limits ──");
   ok(noRepo.status === 400, "setting a folder on an app with no repo is refused with a reason");
 
   const many = await call(h, "POST", "/api/deploy", { token: m, form: upload("a.html", "x", Array.from({length: 11}, (_, i) => String(i + 1))) });
-  ok(many.status === 400 && /10 sites at once/.test(many.body.error), "batch size is capped with a clear message");
+  ok(many.status === 400 && /10 apps at once/.test(many.body.error), "batch size is capped with a clear message");
 
   const none = await call(h, "POST", "/api/deploy", { token: m, form: upload("a.html", "x", []) });
   ok(none.status === 400 && /at least one/i.test(none.body.error), "deploying to nothing is refused");
