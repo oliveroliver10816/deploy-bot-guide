@@ -368,6 +368,31 @@ console.log("\n── repository files ──");
   ok(nolink.status === 400 && /Link a repository/i.test(nolink.body.error), "an app with no repo explains itself");
 }
 
+console.log("\n── creating things must say WHERE ──");
+{
+  const h = newEnv();
+  const { m } = await setup(h);
+  // a second GitHub account, so "which one?" becomes a real question
+  h.state.ghUser = "second-gh";
+  await call(h, "POST", "/api/token", { token: m, json: { kind: "github", token: "ghp_second" } });
+  const st = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(st.accounts.github.length === 2, "two GitHub accounts are connected", String(st.accounts.github.length));
+
+  const blind = await call(h, "POST", "/api/repo/create", { token: m, json: { name: "somewhere" } });
+  ok(blind.status === 400 && /which GitHub account/i.test(blind.body.error),
+     "creating a repo without saying where is refused, and says so plainly", blind.body.error);
+
+  const chosen = await call(h, "POST", "/api/repo/create", { token: m,
+    json: { name: "clear-repo", conn_id: st.accounts.github[1].id } });
+  ok(chosen.status === 200, "naming the account works");
+  ok(chosen.body.account === "second-gh", "and the reply says which account it landed in", JSON.stringify(chosen.body));
+  ok(chosen.body.private === true, "repos are created PRIVATE by default", String(chosen.body.private));
+
+  const logs = (await call(h, "GET", "/api/logs", { token: m })).body.entries;
+  ok(logs.some((l) => /created a repository/.test(l.action) && /second-gh/.test(l.detail || "")),
+     "and the activity log records where it was created");
+}
+
 console.log("\n── the deploy screen warns BEFORE you open Files ──");
 {
   const h = newEnv();
@@ -376,12 +401,19 @@ console.log("\n── the deploy screen warns BEFORE you open Files ──");
   const st = (await call(h, "GET", "/api/state", { token: m })).body;
   const linked = st.sites.filter((x) => x.linked);
   ok(linked.length >= 1, "there is a linked app to judge", String(linked.length));
-  ok(linked.every((x) => x.buildpack === null),
-     "a linked app reports buildpack null on the DEPLOY screen, without opening Files first",
-     JSON.stringify(linked.map((x) => [x.label, x.buildpack])));
+  ok(linked.every((x) => x.buildpack === null && x.buildpack_checked === true),
+     "a linked app is CHECKED and reports nothing detected, on the deploy screen",
+     JSON.stringify(linked.map((x) => [x.label, x.buildpack, x.buildpack_checked])));
   const unlinked = st.sites.filter((x) => !x.linked);
-  ok(unlinked.every((x) => x.buildpack === undefined),
-     "an app with no repo is not judged at all", JSON.stringify(unlinked.map((x) => x.buildpack)));
+  ok(unlinked.every((x) => x.buildpack_checked === false),
+     "an app with no repo is not judged at all", JSON.stringify(unlinked.map((x) => x.buildpack_checked)));
+
+  // a freshly linked app must NOT be accused before anything has looked at it
+  await h.env.DB.prepare("UPDATE apps SET buildpack=NULL").run();
+  const fresh = (await call(h, "GET", "/api/state", { token: m })).body.sites.filter((x) => x.linked);
+  ok(fresh.every((x) => x.buildpack_checked === false),
+     "an app that has not been looked at yet is not reported as unbuildable",
+     JSON.stringify(fresh.map((x) => [x.label, x.buildpack, x.buildpack_checked])));
 
   // once it can build, the deploy screen stops warning
   h.state.gitTree = [{ path: "index.php", type: "blob", size: 36, sha: "x" }];

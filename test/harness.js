@@ -73,7 +73,7 @@ export function makeNet(opts = {}) {
       { path: "assets/app.css", type: "blob", size: 400, sha: "b3" },
       { path: "assets/logo.png", type: "blob", size: 900, sha: "b4" },
     ],
-    blobsWritten: [], treesWritten: [], commitsWritten: [],
+    blobsWritten: [], treesWritten: [], commitsWritten: [], reposCreated: [], appsCreated: [],
     hkUser: opts.hkUser ?? "bob@example.com",
     ghPutStatus: opts.ghPutStatus ?? 200,
     tarballBytes: opts.tarballBytes ?? 4096,
@@ -104,6 +104,13 @@ export function makeNet(opts = {}) {
       const p = new URL(u).pathname;
 
       if (p === "/user") return J({ login: state.ghUser || "bobaccount" });
+      if (p === "/user/repos" && method === "POST") {
+        const b = JSON.parse(init.body || "{}");
+        state.reposCreated.push(b);
+        return J({ name: b.name, full_name: `${state.ghUser || "bobaccount"}/${b.name}`,
+                   owner: { login: state.ghUser || "bobaccount" }, private: !!b.private,
+                   default_branch: "main" }, 201);
+      }
       if (p === "/user/repos") return J(state.ghRepos);
 
       let m = p.match(/^\/repos\/([^/]+)\/([^/]+)\/contents\/?(.*)$/);
@@ -179,6 +186,12 @@ export function makeNet(opts = {}) {
       const p = new URL(u).pathname;
       if (p === "/account") return J({ email: state.hkUser || "bob@example.com" });
       if (p === "/apps" && method === "GET") return J(state.hkApps);
+      if (p === "/apps" && method === "POST") {
+        const b = JSON.parse(init.body || "{}");
+        state.appsCreated.push(b);
+        return J({ id: "app-" + (state.appsCreated.length), name: b.name || "auto-name",
+                   web_url: `https://${b.name || "auto"}-1a2b3c4d5e6f.herokuapp.com/` }, 201);
+      }
       if (p === "/sources" && method === "POST")
         return J({ source_blob: { put_url: "https://s3.example/put?sig=1", get_url: "https://s3.example/get?sig=1" } });
 

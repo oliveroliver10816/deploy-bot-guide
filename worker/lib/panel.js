@@ -382,7 +382,9 @@ async function recordBuildpack(env, appId, repo) {
   try {
     const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
     const bp = GH.buildpackFor(t.entries.filter((e) => e.type === "blob").map((e) => e.path));
-    await q(env, `UPDATE apps SET buildpack=? WHERE id=?`, bp, appId).run();
+    // '' means "we looked and Heroku will find nothing"; NULL still means "not
+    // looked at yet". Conflating them made a brand-new app look broken.
+    await q(env, `UPDATE apps SET buildpack=? WHERE id=?`, bp === null ? "" : bp, appId).run();
     return bp;
   } catch { return undefined; }
 }
@@ -517,8 +519,10 @@ export async function handlePanel(env, request, ctx, path) {
       branch: a.branch || "main",
       dir: a.dir || "",
       linked: !!a.repo_id,
-      // null = Heroku will not be able to build it; undefined = not checked yet
-      buildpack: a.repo_id ? (a.buildpack === undefined ? null : a.buildpack) : undefined,
+      // buildpack: the name, or null. buildpack_checked says whether we have
+      // actually looked — the panel must only warn when checked AND nothing found.
+      buildpack: a.buildpack ? a.buildpack : null,
+      buildpack_checked: a.repo_id ? a.buildpack !== null && a.buildpack !== undefined : false,
       account: a.heroku_account || "",
     }));
 
@@ -807,20 +811,32 @@ export async function handlePanel(env, request, ctx, path) {
   if (route === "repo" && seg[2] === "create" && request.method === "POST") {
     const b = await body();
     const c = await soleConn(env, "github", b.conn_id);
-    if (!c) return err(env, request, "Connect a GitHub account first.");
+    if (!c) {
+      const n = ((await q(env, `SELECT id FROM connections WHERE kind='github'`).all()).results || []).length;
+      return err(env, request, n
+        ? "Choose which GitHub account to create it in."
+        : "Connect a GitHub account first.");
+    }
     try {
       const r = await GH.createRepo(c.token, String(b.name || "").trim(), b.private !== false, fetch);
-      return json(env, request, r);
+      await logAction(env, me.username, "created a repository", r.full_name, `on ${c.account}`);
+      return json(env, request, { ...r, account: c.account, private: b.private !== false });
     } catch (e) { return err(env, request, String(e.message || e)); }
   }
 
   if (route === "app" && seg[2] === "create" && request.method === "POST") {
     const b = await body();
     const c = await soleConn(env, "heroku", b.conn_id);
-    if (!c) return err(env, request, "Connect a Heroku account first.");
+    if (!c) {
+      const n = ((await q(env, `SELECT id FROM connections WHERE kind='heroku'`).all()).results || []).length;
+      return err(env, request, n
+        ? "Choose which Heroku account to create it in."
+        : "Connect a Heroku account first.");
+    }
     try {
       const a = await HK.createApp(c.token, String(b.name || "").trim() || undefined, b.region || undefined, fetch);
-      return json(env, request, a);
+      await logAction(env, me.username, "created a Heroku app", a.name, `on ${c.account}`);
+      return json(env, request, { ...a, account: c.account });
     } catch (e) { return err(env, request, String(e.message || e)); }
   }
 
