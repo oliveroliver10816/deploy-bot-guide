@@ -20,7 +20,7 @@ async def main():
         await pg.click("#loginBtn"); await pg.wait_for_selector("#shell:not([hidden])", timeout=20000)
         await pg.wait_for_timeout(700)
         await shot("02-sites")
-        await pg.click("label:has(#selAll)"); await pg.wait_for_timeout(300)
+        await pg.click("label:has(#selAll)"); await pg.wait_for_timeout(400)
         await pg.set_input_files("input[type=file]", {"name": "summer-sale.html", "mimeType": "text/html", "buffer": b"<h1>hi</h1>"})
         await pg.wait_for_timeout(500)
         await shot("05-filechosen")
@@ -32,7 +32,9 @@ async def main():
             u = await pg.evaluate("""() => [...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&/undo/i.test(b.textContent))""")
             if u and any(w in t.lower() for w in ("live", "failed", "saved")): break
         await shot("08-done")
-        await pg.click("[data-view=settings]"); await pg.wait_for_timeout(800)
+        el = await pg.query_selector("[data-view=settings]")
+        if el: await el.click()
+        await pg.wait_for_timeout(1000)
         await shot("09-keys")
         tabs = await pg.query_selector_all(".tab")
         if len(tabs) > 1:

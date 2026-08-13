@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS apps (
   repo_id       INTEGER REFERENCES repos(id) ON DELETE SET NULL,
   web_url       TEXT,
   created_at    TEXT NOT NULL,
+  combo_id      INTEGER,                  -- which GitHub+Heroku pair it came from
   UNIQUE (connection_id, heroku_name)
 );
 
@@ -146,3 +147,27 @@ CREATE TABLE IF NOT EXISTS batch_targets (
 );
 
 CREATE INDEX IF NOT EXISTS bt_pending ON batch_targets (status);
+
+-- ---- combos, auto-discovery, audit log (2026-08-13) ---------------------
+-- A "combo" pairs ONE GitHub account with ONE Heroku account. Several combos
+-- can exist side by side, so several of each kind of account are supported.
+CREATE TABLE IF NOT EXISTS combos (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  label          TEXT,
+  github_conn_id INTEGER NOT NULL,
+  heroku_conn_id INTEGER NOT NULL,
+  created_at     TEXT NOT NULL,
+  UNIQUE (github_conn_id, heroku_conn_id)
+);
+
+-- Every action worth explaining later. Stored as ISO UTC; the panel renders IST.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  at     TEXT NOT NULL,
+  actor  TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT,
+  ok     INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS audit_recent ON audit_log (id DESC);

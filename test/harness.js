@@ -49,10 +49,18 @@ export function makeNet(opts = {}) {
       "public/css": [{ type: "file", name: "app.css", sha: "shaCSS", size: 40 }],
     },
     blobs: opts.blobs ?? { shaINDEX: Buffer.from("<old>old page</old>").toString("base64") },
-    hkApps: opts.hkApps ?? [{ name: "app-one", web_url: "https://app-one.herokuapp.com/" }, { name: "app-two", web_url: "https://app-two.herokuapp.com/" }],
+    // "site-one" deliberately matches a repo name so auto-linking is exercised;
+    // the other two do not, so the "needs a repo" path is exercised too.
+    hkApps: opts.hkApps ?? [
+      { name: "app-one", web_url: "https://app-one.herokuapp.com/" },
+      { name: "app-two", web_url: "https://app-two.herokuapp.com/" },
+      { name: "site-one", web_url: "https://site-one-1a2b3c4d5e6f.herokuapp.com/" },
+    ],
     hkAutoDeploy: opts.hkAutoDeploy ?? {},
     buildStatus: opts.buildStatus ?? "pending",
     buildLog: opts.buildLog ?? "-----> Build failed\nsome compiler error\n",
+    ghUser: opts.ghUser ?? "bobaccount",
+    hkUser: opts.hkUser ?? "bob@example.com",
     ghPutStatus: opts.ghPutStatus ?? 200,
     tarballBytes: opts.tarballBytes ?? 4096,
     uploadFileBytes: opts.uploadFileBytes ?? Buffer.from("<new>new page</new>"),
@@ -81,7 +89,7 @@ export function makeNet(opts = {}) {
     if (u.startsWith("https://api.github.com")) {
       const p = new URL(u).pathname;
 
-      if (p === "/user") return J({ login: "bobaccount" });
+      if (p === "/user") return J({ login: state.ghUser || "bobaccount" });
       if (p === "/user/repos") return J(state.ghRepos);
 
       let m = p.match(/^\/repos\/([^/]+)\/([^/]+)\/contents\/?(.*)$/);
@@ -129,7 +137,7 @@ export function makeNet(opts = {}) {
     // ---------------- Heroku ----------------
     if (u.startsWith("https://api.heroku.com")) {
       const p = new URL(u).pathname;
-      if (p === "/account") return J({ email: "bob@example.com" });
+      if (p === "/account") return J({ email: state.hkUser || "bob@example.com" });
       if (p === "/apps" && method === "GET") return J(state.hkApps);
       if (p === "/sources" && method === "POST")
         return J({ source_blob: { put_url: "https://s3.example/put?sig=1", get_url: "https://s3.example/get?sig=1" } });

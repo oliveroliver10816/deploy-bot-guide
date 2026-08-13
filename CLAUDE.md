@@ -260,3 +260,53 @@ logins re-seeded, deployed. **Old `deploy_bot` (EEUR) left in place, untouched.*
 and the VA work from India, **APAC** would beat both; it is a 5-minute rebuild.
 ⚠️ `seed.py` had the database name **hardcoded** and silently wrote the users to the OLD database
 after the move. It now reads the name from `wrangler.json`.
+
+
+## v3 (2026-08-13) — apps, pairs, log. Design ACCEPTED.
+
+Bob on v2: *"THE PANEL NOW LOOKS REALLY AWESOME !! NO WORDS FOR THIS DESIGN AND STRUCTURE"* —
+so v3 EXTENDS that design, never replaces it. Eight changes he listed:
+
+⭐ **The model changed: deploy targets are his real HEROKU APPS, discovered automatically.**
+There are no .com domains — he tests on `herokuapp.com`. Connecting the first GitHub key and the
+first Heroku key now **pairs them and pulls everything by itself**: every Heroku app, every repo,
+and an automatic name match between them (including Heroku's random `-1a2b3c4d5e6f` suffix).
+`/api/state.sites` IS the app list. An app with no repo is shown with **no checkbox at all** (not a
+disabled one), carries a "Choose a repository" button, and select-all skips it.
+
+⭐ **Combos.** `combos` pairs ONE GitHub account with ONE Heroku account; many pairs coexist, so many
+accounts of each kind are supported. Deploy resolves app → repo; two apps on the same repo in one
+batch = the second is **skipped with a reason**, never committed twice.
+
+⭐ **The VA runs the panel.** His words: *"VA MUST ALSO BE ABLE TO ADD KEYS… I just want VA to work
+on it."* Keys, pairs, linking, refresh, deploy, undo and the log are all open to her. The **only**
+owner-only surface is People — otherwise she could remove his own account. One `needMaster()` left
+in `panel.js`; that is deliberate.
+
+⭐ **Activity log** — `audit_log` records sign-ins, key connections, pairings, links, deploys, undos,
+people changes. Stored ISO UTC, rendered **Asia/Kolkata** with a "Time (IST)" column.
+Verified live: a 00:54 UTC row renders "13 Aug 2026, 6:24 am".
+
+**Role naming settled:** the database still stores `master`; **every API response says `owner`**
+(`outRole()`). The UI contains **zero** `'master'` literals. This is what caused "shows me as VA in
+People" — the header had been normalised but the People list had not.
+
+### Defects found by review/tests this round (all fixed)
+- ⭐ `grid-template-columns:1fr` at the phone breakpoint overflowed a 390px screen by 14px:
+  **bare `1fr` is `minmax(auto,1fr)` and `auto` will not shrink below min-content.** Use
+  `minmax(0,1fr)`. Two more instances of the same pattern remain in non-overflowing contexts.
+- The log trusted the API's ordering; it now sorts explicitly (day headings would repeat otherwise).
+- The "Time (IST)" header was `aria-hidden` and `display:none` under 700px — invisible to a phone
+  and to a screen reader. Now collapses instead of disappearing.
+- Cards titled by `s.label`; hardened to `s.app||s.label` so a domain in `label` can never put a
+  .com back on a card — the exact shape of the earlier rejection.
+- KB did not document *Change your password*; added.
+
+**Tests:** node **100 panel + 69 bot**. `test/browser/` = `wide.py` (100% width AND height at
+3440/1680/1280/390), `v2.py`, `v3.py` (apps, unlinked-app rules, pairs, equal-height cards, roles,
+IST log, VA boundary), `shots.py`.
+⚠️ Two v3 test assertions were wrong, not the product: an unlinked app has **no checkbox** rather
+than a disabled one, and the People tab is `hidden` rather than absent. Verify behaviour before
+"fixing" code.
+
+⚠️ Heroku app creation still needs a **verified** account; he is on the $5 Eco plan, which qualifies.

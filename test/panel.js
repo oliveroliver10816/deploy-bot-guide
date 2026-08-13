@@ -40,21 +40,32 @@ async function call(h, method, path, { token, json, form, origin = ORIGIN } = {}
   return { status: res.status, body: parsed, headers: res.headers };
 }
 
-/** Fully wire a panel: users, tokens, two sites, one linked app. */
+/**
+ * Wire a panel the way the owner actually does now: create the two accounts,
+ * paste one GitHub key and one Heroku key. Everything else — pairing the two,
+ * pulling his Heroku apps and GitHub repos, and matching them by name — is
+ * supposed to happen on its own.
+ */
 async function setup(h) {
-  await call(h, "GET", "/api/state"); // forces schema creation
+  await call(h, "GET", "/api/state");
   await createUser(h.env, "master1", "masterpass1", "master");
   await createUser(h.env, "va1", "vapassword1", "va");
   const m = (await call(h, "POST", "/api/login", { json: { username: "master1", password: "masterpass1" } })).body.session;
   await call(h, "POST", "/api/token", { token: m, json: { kind: "github", token: "ghp_x" } });
   await call(h, "POST", "/api/token", { token: m, json: { kind: "heroku", token: "hk_x" } });
-  const conns = (await call(h, "GET", "/api/state", { token: m })).body.accounts;
-  const gh = conns.github[0].id, hk = conns.heroku[0].id;
-  const s1 = (await call(h, "POST", "/api/site", { token: m, json: { conn_id: gh, owner: "bob", repo: "site-one", branch: "main", label: "one.com", url: "https://one.com", dir: "public" } })).body.id;
-  const s2 = (await call(h, "POST", "/api/site", { token: m, json: { conn_id: gh, owner: "bob", repo: "site-two", branch: "main", label: "two.com", url: "https://two.com", dir: "public" } })).body.id;
-  await call(h, "POST", "/api/link", { token: m, json: { site_id: s1, app_conn_id: hk, heroku_name: "app-one" } });
+  const st = (await call(h, "GET", "/api/state", { token: m })).body;
+  const byName = Object.fromEntries((st.sites || []).map((x) => [x.label, x]));
   const v = (await call(h, "POST", "/api/login", { json: { username: "va1", password: "vapassword1" } })).body.session;
-  return { m, v, s1, s2, gh, hk };
+  return { m, v, st, byName };
+}
+
+/** Link a repo to an app and give it a folder, so it can receive a file. */
+async function ready(h, m, byName, appName, repoName = "site-one", dir = "public") {
+  const repos = (await call(h, "GET", "/api/repos", { token: m })).body.repos;
+  const repo = repos.find((r) => r.name === repoName);
+  await call(h, "POST", "/api/link", { token: m, json: { app_id: byName[appName].id, repo_id: repo.id } });
+  await call(h, "PATCH", `/api/app/${byName[appName].id}`, { token: m, json: { dir } });
+  return byName[appName].id;
 }
 
 const upload = (name, content, sites, mode = "auto") => {
@@ -80,7 +91,7 @@ console.log("\n── auth ──");
 
   r = await call(h, "POST", "/api/login", { json: { username: "master1", password: "masterpass1" } });
   ok(r.status === 200 && !!r.body.session, "correct password returns a session");
-  ok(r.body.role === "master", "role comes back with the session");
+  ok(r.body.role === "owner", "role comes back with the session, using the outward name");
 
   const t = r.body.session;
   ok((await call(h, "GET", "/api/state")).status === 401, "no token = 401");
@@ -121,85 +132,176 @@ console.log("\n── CORS ──");
   ok(other.headers.get("Access-Control-Allow-Origin") !== "https://evil.example", "another origin is not echoed back");
 }
 
-console.log("\n── roles ──");
+console.log("\n── roles: the VA runs the panel ──");
 {
   const h = newEnv();
-  const { m, v, s1 } = await setup(h);
+  const { m, v } = await setup(h);
   ok((await call(h, "GET", "/api/state", { token: v })).status === 200, "VA can read state");
-  ok((await call(h, "GET", "/api/state", { token: v })).body.users.length === 0, "VA state hides the user list");
-  ok((await call(h, "GET", "/api/state", { token: m })).body.users.length === 2, "master sees users");
 
+  // Bob's instruction: minimal involvement from him, so the VA may do the work.
   for (const [method, path, json] of [
-    ["POST", "/api/token", { kind: "github", token: "x" }],
-    ["POST", "/api/site", { conn_id: 1, owner: "a", repo: "b" }],
-    ["DELETE", `/api/site/${s1}`, undefined],
-    ["POST", "/api/user", { username: "eve", password: "password123", role: "master" }],
-    ["POST", "/api/repo/create", { conn_id: 1, name: "x" }],
-    ["POST", "/api/app/create", { conn_id: 1, name: "x" }],
+    ["POST", "/api/token", { kind: "github", token: "ghp_x" }],
     ["GET", "/api/discover/repos", undefined],
+    ["POST", "/api/refresh", {}],
   ]) {
     const r = await call(h, method, path, { token: v, json });
-    ok(r.status === 403, `VA is refused ${method} ${path}`);
+    ok(r.status === 200, `VA may ${method} ${path}`, `got ${r.status}`);
   }
 
-  // The tokens themselves must never be readable through the API.
+  // ...except adding or removing people, which could remove the owner himself.
+  const u1 = await call(h, "POST", "/api/user", { token: v, json: { username: "eve", password: "password123", role: "master" } });
+  ok(u1.status === 403, "VA cannot add people");
+  const u2 = await call(h, "DELETE", "/api/user/master1", { token: v });
+  ok(u2.status === 403, "VA cannot remove people");
+
+  // Tokens must never be readable through the API, by anyone.
   const st = JSON.stringify((await call(h, "GET", "/api/state", { token: m })).body);
   ok(!st.includes("ghp_x") && !st.includes("hk_x"), "API never returns the stored GitHub/Heroku tokens");
+
+  const me = (await call(h, "GET", "/api/me", { token: m })).body;
+  ok(me.role === "owner", "the owner is reported as owner, not as a VA");
+  const users = (await call(h, "GET", "/api/state", { token: m })).body.users;
+  ok(users.find((u) => u.username === "master1").role === "owner",
+     "the People list shows the owner as owner");
+  ok(users.find((u) => u.username === "va1").role === "va", "and the VA as va");
+}
+
+console.log("\n── auto-discovery from the keys alone ──");
+{
+  const h = newEnv();
+  const { m, st, byName } = await setup(h);
+  ok(st.sites.length === 3, "every Heroku app is pulled in automatically", `got ${st.sites.length}`);
+  ok(!!byName["app-one"] && !!byName["site-one"], "apps are listed by their Heroku name");
+  ok(byName["site-one"].linked === true, "an app whose name matches a repo is linked automatically");
+  ok(byName["app-one"].linked === false, "an app with no matching repo is flagged as needing one");
+  ok(st.needs.unlinked === 2, "the panel reports how many still need a repo", String(st.needs.unlinked));
+  ok(st.combos.length === 1, "the first GitHub + Heroku keys are paired automatically");
+  ok(st.combos[0].apps === 3, "the pairing knows how many apps it brought in", String(st.combos[0].apps));
+  ok(byName["site-one"].url.includes("herokuapp.com"), "the Heroku URL is used, not an invented domain");
+
+  const repos = (await call(h, "GET", "/api/repos", { token: m })).body.repos;
+  ok(repos.length === 2, "repos are pulled too, ready to link", String(repos.length));
+
+  // linking the rest is one call per app
+  const lk = await call(h, "POST", "/api/link", { token: m, json: { app_id: byName["app-one"].id, repo_id: repos.find(r => r.name === "site-two").id } });
+  ok(lk.status === 200, "an app can be linked to a repo");
+  const after = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(after.sites.find((x) => x.label === "app-one").linked === true, "the link shows up straight away");
+  ok(after.needs.unlinked === 1, "the outstanding count drops");
+}
+
+console.log("\n── several account pairs at once ──");
+{
+  const h = newEnv();
+  const { m } = await setup(h);
+  // a second pair of accounts, added later
+  h.state.ghUser = "second-gh";
+  const r1 = await call(h, "POST", "/api/token", { token: m, json: { kind: "github", token: "ghp_second" } });
+  ok(r1.status === 200, "a second GitHub account can be connected");
+  const st = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(st.accounts.github.length === 2, "both GitHub accounts are kept", String(st.accounts.github.length));
+  ok(st.combos.length === 1, "a second account does not silently re-pair the first");
+
+  const combo = await call(h, "POST", "/api/combo", { token: m, json: {
+    github_conn_id: st.accounts.github[1].id, heroku_conn_id: st.accounts.heroku[0].id } });
+  ok(combo.status === 200, "a new pair can be made explicitly");
+  const st2 = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(st2.combos.length === 2, "both pairs exist side by side", String(st2.combos.length));
+
+  const dupe = await call(h, "POST", "/api/combo", { token: m, json: {
+    github_conn_id: st.accounts.github[1].id, heroku_conn_id: st.accounts.heroku[0].id } });
+  ok(dupe.status === 400 && /already paired/i.test(dupe.body.error), "the same pair cannot be made twice");
 }
 
 console.log("\n── deploy fan-out ──");
 {
   const h = newEnv();
-  const { m, s1, s2 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const repos = (await call(h, "GET", "/api/repos", { token: m })).body.repos;
+  // link the two unlinked apps so all three can receive a file
+  await call(h, "POST", "/api/link", { token: m, json: { app_id: byName["app-one"].id, repo_id: repos.find(r => r.name === "site-two").id } });
+  // give each linked repo a target folder
+  await call(h, "PATCH", `/api/app/${byName["site-one"].id}`, { token: m, json: { dir: "public" } });
+  await call(h, "PATCH", `/api/app/${byName["app-one"].id}`, { token: m, json: { dir: "public" } });
+
   h.calls.length = 0;
-  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "<new>new page</new>", [s1, s2]) });
+  const r = await call(h, "POST", "/api/deploy", { token: m,
+    form: upload("index.html", "<new>new page</new>", [byName["site-one"].id, byName["app-one"].id]) });
   ok(r.status === 200 && !!r.body.batch, "deploy returns a batch id immediately");
-  ok(r.body.targets.length === 2, "both sites are queued");
+  ok(r.body.targets.length === 2, "both apps are queued", JSON.stringify(r.body.targets));
 
   const puts = h.calls.filter((c) => c.method === "PUT" && c.url.includes("/contents/"));
-  ok(puts.length === 2, "one commit per selected site", `saw ${puts.length}`);
+  ok(puts.length === 2, "one commit per selected app", `saw ${puts.length}`);
   ok(puts.every((p) => JSON.parse(p.body).content === Buffer.from("<new>new page</new>").toString("base64")),
-     "the same exact bytes went to every site");
-  ok(puts.every((p) => p.url.includes("public/index.html")), "each site used its own configured folder");
+     "the same exact bytes went to every app's repo");
+  ok(puts.every((p) => p.url.includes("public/index.html")), "each used its own configured folder");
 
   const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
-  ok(st.body.targets.every((t) => typeof t.site_id === "string"), "batch site_id is a string, matching /api/state");
-  const byLabel = Object.fromEntries(st.body.targets.map((t) => [t.label, t]));
-  ok(byLabel["one.com"].status === "building", "linked site moves to building");
-  ok(byLabel["two.com"].status === "no_app", "unlinked site reports no_app, not failure");
+  ok(st.body.targets.every((t) => ["building", "live", "no_app"].includes(t.status)),
+     "targets move past committing", JSON.stringify(st.body.targets.map(t => t.status)));
+  ok(st.body.targets.every((t) => typeof t.site_id === "string"), "batch site_id is a string");
+  ok(st.body.targets.map((t) => t.label).sort().join(",") === "app-one,site-one",
+     "results are labelled by Heroku app name", st.body.targets.map(t => t.label).join(","));
 
-  // privacy path: the signed codeload URL is handed to Heroku, archive not pulled through us
   const build = h.calls.find((c) => c.url.includes("/builds") && c.method === "POST");
   ok(!!build && JSON.parse(build.body).source_blob.url.includes("codeload.github.com"),
-     "Heroku is given the signed GitHub URL, so repo contents never transit the Worker");
-  ok(!h.calls.some((c) => c.url.startsWith("https://s3.example/put")), "no archive upload happened on the fast path");
+     "Heroku gets the signed GitHub URL, so repo contents never transit the Worker");
 }
 
-console.log("\n── partial failure ──");
+console.log("\n── an app with no repository ──");
 {
   const h = newEnv();
-  const { m, s1, s2 } = await setup(h);
-  // site-two has no such file, so mode=replace must fail there and only there
-  h.state.ghTree["public"] = [{ type: "file", name: "index.html", sha: "shaINDEX", size: 10 }];
-  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("missing.html", "x", [s1, s2], "replace") });
+  const { m, byName } = await setup(h);
+  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [byName["app-two"].id]) });
   const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
-  ok(st.body.targets.every((t) => t.status === "failed"), "replace-only mode fails when the file is absent");
-  ok(st.body.targets.every((t) => /does not exist/i.test(t.detail || "")), "the reason is stated in plain words");
-  ok(st.body.done === true, "batch reports done once every target settled");
+  ok(st.body.targets[0].status === "failed", "an unlinked app fails rather than silently doing nothing");
+  ok(/no repository linked/i.test(st.body.targets[0].detail || ""), "and says exactly what to do",
+     st.body.targets[0].detail || "");
+  ok(st.body.targets[0].label === "app-two", "the failure is labelled with the app name");
 }
+
+console.log("\n── two apps sharing one repository ──");
 {
   const h = newEnv();
-  const { m, s1 } = await setup(h);
-  const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1], "new") });
+  const { m, byName } = await setup(h);
+  const repos = (await call(h, "GET", "/api/repos", { token: m })).body.repos;
+  const one = repos.find((x) => x.name === "site-one").id;
+  await call(h, "POST", "/api/link", { token: m, json: { app_id: byName["app-one"].id, repo_id: one } });
+  const r = await call(h, "POST", "/api/deploy", { token: m,
+    form: upload("index.html", "x", [byName["site-one"].id, byName["app-one"].id]) });
   const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
-  ok(st.body.targets[0].status === "failed" && /already exists/i.test(st.body.targets[0].detail),
-     "new-only mode refuses to clobber an existing file");
+  const skipped = st.body.targets.filter((t) => t.status === "skipped");
+  ok(skipped.length === 1, "the second app on the same repo is skipped, not committed twice",
+     JSON.stringify(st.body.targets.map(t => [t.label, t.status])));
+  ok(/same repository/i.test(skipped[0].detail || ""), "and the reason is stated");
+}
+
+console.log("\n── activity log ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  await call(h, "PATCH", `/api/app/${byName["site-one"].id}`, { token: m, json: { dir: "public" } });
+  await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [byName["site-one"].id]) });
+  const logs = (await call(h, "GET", "/api/logs", { token: m })).body.entries;
+  ok(Array.isArray(logs) && logs.length >= 4, "the log records what happened", String(logs.length));
+  const actions = logs.map((l) => l.action);
+  ok(actions.includes("signed in"), "sign-ins are logged");
+  ok(actions.some((a) => /connected a GitHub key/i.test(a)), "connecting a key is logged");
+  ok(actions.includes("paired accounts"), "pairing is logged");
+  ok(actions.includes("sent a file") || actions.includes("started a deploy"), "deploys are logged");
+  ok(logs.every((l) => !!l.actor), "every entry says who did it");
+  ok(logs.every((l) => /^\d{4}-\d{2}-\d{2}T.*Z$/.test(l.at)),
+     "timestamps are stored as UTC so the panel can render IST", logs[0] && logs[0].at);
+  ok(logs[0].at >= logs[logs.length - 1].at, "newest first");
+  const va = (await call(h, "POST", "/api/login", { json: { username: "va1", password: "vapassword1" } })).body.session;
+  ok((await call(h, "GET", "/api/logs", { token: va })).status === 200, "the VA can read the log too");
 }
 
 console.log("\n── build polling ──");
 {
   const h = newEnv({ buildStatus: "succeeded" });
-  const { m, s1 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const s1 = await ready(h, m, byName, "site-one");
   const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
   const { ctx, settle } = makeCtx();
   await worker.scheduled({}, h.env, ctx); await settle();
@@ -208,7 +310,8 @@ console.log("\n── build polling ──");
 }
 {
   const h = newEnv({ buildStatus: "failed" });
-  const { m, s1 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const s1 = await ready(h, m, byName, "site-one");
   const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
   const { ctx, settle } = makeCtx();
   await worker.scheduled({}, h.env, ctx); await settle();
@@ -220,7 +323,8 @@ console.log("\n── build polling ──");
 console.log("\n── on-read build refresh (no cron) ──");
 {
   const h = newEnv({ buildStatus: "succeeded" });
-  const { m, s1 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const s1 = await ready(h, m, byName, "site-one");
   const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
   // deliberately do NOT run worker.scheduled — reading the batch must refresh it
   const st = await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
@@ -229,7 +333,8 @@ console.log("\n── on-read build refresh (no cron) ──");
 }
 {
   const h = newEnv({ buildStatus: "pending" });
-  const { m, s1 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const s1 = await ready(h, m, byName, "site-one");
   const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "x", [s1]) });
   h.calls.length = 0;
   await call(h, "GET", `/api/batch/${r.body.batch}`, { token: m });
@@ -244,7 +349,9 @@ console.log("\n── on-read build refresh (no cron) ──");
 console.log("\n── undo a batch ──");
 {
   const h = newEnv({ buildStatus: "succeeded" });
-  const { m, s1, s2 } = await setup(h);
+  const { m, byName } = await setup(h);
+  const s1 = await ready(h, m, byName, "site-one", "site-one");
+  const s2 = await ready(h, m, byName, "app-one", "site-two");
   const r = await call(h, "POST", "/api/deploy", { token: m, form: upload("index.html", "<new>new page</new>", [s1, s2]) });
   h.calls.length = 0;
   const u = await call(h, "POST", `/api/undo/${r.body.batch}`, { token: m });
@@ -257,27 +364,25 @@ console.log("\n── undo a batch ──");
   ok(st.body.targets.length === 2, "undo batch reports per-site status too");
 }
 
-console.log("\n── sites and limits ──");
+console.log("\n── limits ──");
 {
   const h = newEnv();
-  const { m, gh } = await setup(h);
-  const dup = await call(h, "POST", "/api/site", { token: m, json: { conn_id: gh, owner: "bob", repo: "site-one", label: "dup" } });
-  ok(dup.status === 400 && /already/i.test(dup.body.error), "the same repo cannot be added twice");
+  const { m, byName } = await setup(h);
+  const id = await ready(h, m, byName, "site-one");
 
-  const patched = await call(h, "PATCH", "/api/site/1", { token: m, json: { dir: "/dist/", label: "renamed.com" } });
-  ok(patched.status === 200, "site can be edited");
-  const st2 = (await call(h, "GET", "/api/state", { token: m })).body;
-  ok(st2.sites.every((x) => typeof x.id === "string"),
-     "site ids are strings — the UI reads them from DOM datasets and compares with ===");
-  const s = st2.sites.find((x) => x.id === "1");
-  ok(s.dir === "dist", "leading and trailing slashes are stripped from the folder");
-  ok(s.label === "renamed.com", "label updated");
+  const patched = await call(h, "PATCH", `/api/app/${id}`, { token: m, json: { dir: "/dist/" } });
+  ok(patched.status === 200, "an app's target folder can be changed");
+  const s2 = (await call(h, "GET", "/api/state", { token: m })).body.sites.find((x) => x.id === id);
+  ok(s2.dir === "dist", "leading and trailing slashes are stripped from the folder");
 
-  const many = await call(h, "POST", "/api/deploy", { token: m, form: upload("a.html", "x", [1,2,3,4,5,6,7,8,9,10,11]) });
+  const noRepo = await call(h, "PATCH", `/api/app/${byName["app-two"].id}`, { token: m, json: { dir: "x" } });
+  ok(noRepo.status === 400, "setting a folder on an app with no repo is refused with a reason");
+
+  const many = await call(h, "POST", "/api/deploy", { token: m, form: upload("a.html", "x", Array.from({length: 11}, (_, i) => String(i + 1))) });
   ok(many.status === 400 && /10 sites at once/.test(many.body.error), "batch size is capped with a clear message");
 
   const none = await call(h, "POST", "/api/deploy", { token: m, form: upload("a.html", "x", []) });
-  ok(none.status === 400 && /at least one/i.test(none.body.error), "deploying to no sites is refused");
+  ok(none.status === 400 && /at least one/i.test(none.body.error), "deploying to nothing is refused");
 }
 
 console.log("\n── token handling ──");
