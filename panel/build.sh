@@ -13,6 +13,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 API_BASE="https://deploy-bot.fleet-fefsba.workers.dev"
+# Bob keeps every download. Each build gets its own numbered file so his
+# downloads folder stays readable and he can tell versions apart at a glance.
+VERSION="$(cat "$HERE/VERSION" 2>/dev/null || echo 1)"
+ZIP="deploy-panel-v${VERSION}.zip"
 SHOTS="${SHOTS_JSON:-$HERE/shots/shots.json}"
 OUT="$HERE/dist"
 STAGE="$OUT/deploy"
@@ -22,9 +26,9 @@ rm -rf "$OUT"; mkdir -p "$STAGE"
 [ -s "$HERE/public/index.html" ] || { echo "public/index.html missing or empty" >&2; exit 1; }
 cp "$HERE/public/index.html" "$STAGE/index.html"
 
-python3 - "$STAGE/index.html" "$API_BASE" "$SHOTS" <<'PY'
+python3 - "$STAGE/index.html" "$API_BASE" "$SHOTS" "$VERSION" <<'PY'
 import json, os, re, sys
-path, base, shots_path = sys.argv[1], sys.argv[2], sys.argv[3]
+path, base, shots_path, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 s = open(path, encoding="utf-8").read()
 
 # 1. point at the live API, force the offline mock off
@@ -50,7 +54,12 @@ dupes = sorted({i for i in ids if ids.count(i) > 1})
 if dupes:
     sys.exit(f"duplicate element ids in the page: {dupes}")
 
+# stamp the version so a page can always be identified after upload
+s = s.replace("<!doctype html>", f"<!doctype html>\n<!-- deploy panel v{version} -->", 1)
+s = re.sub(r'(<title>)([^<]*)(</title>)', r'\1\2\3', s, count=1)
+
 open(path, "w", encoding="utf-8").write(s)
+print(f"  version: v{version}")
 print(f"  screenshots embedded: {len(set(wanted)) - len(set(missing))}/{len(set(wanted))}")
 if missing:
     print(f"  ! placeholders with no image: {sorted(set(missing))}")
@@ -80,6 +89,7 @@ EOF
 cat > "$STAGE/README.txt" <<'EOF'
 DEPLOY PANEL — what to do with this folder
 ==========================================
+(version is in the folder name and in the first line of index.html)
 
 1. Unzip it.
 2. Upload the CONTENTS of the "deploy" folder into  public_html/deploy/
@@ -105,9 +115,11 @@ Your tokens are stored on the backend, never in this page.
 EOF
 
 cd "$OUT"
-zip -qr deploy-panel.zip deploy
+zip -qr "$ZIP" deploy
 cd - >/dev/null
 
-echo "Built: $OUT/deploy-panel.zip"
-unzip -l "$OUT/deploy-panel.zip" | sed 's/^/  /'
-echo "md5: $(md5sum "$OUT/deploy-panel.zip" | cut -d' ' -f1)"
+echo "Built: $OUT/$ZIP"
+unzip -l "$OUT/$ZIP" | sed 's/^/  /'
+echo "md5: $(md5sum "$OUT/$ZIP" | cut -d' ' -f1)"
+echo
+echo "Next build: bump panel/VERSION to $((VERSION + 1))"

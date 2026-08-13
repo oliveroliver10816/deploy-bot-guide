@@ -310,3 +310,11 @@ than a disabled one, and the People tab is `hidden` rather than absent. Verify b
 "fixing" code.
 
 ⚠️ Heroku app creation still needs a **verified** account; he is on the $5 Eco plan, which qualifies.
+
+
+## Delivery rules (Bob, 2026-08-13)
+- **Every build is numbered.** `panel/VERSION` holds the number; `build.sh` names the archive
+  `deploy-panel-v<N>.zip`, stamps `<!-- deploy panel v<N> -->` as line 2 of index.html so an
+  uploaded page can still be identified, and prints the next number to bump to.
+  **v4 is built and staged; v1–v3 shipped under the unnumbered name.**
+- **The download link goes at the END of every reply**, not only mid-message.
