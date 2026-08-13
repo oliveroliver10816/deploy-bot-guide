@@ -88,6 +88,7 @@
   --pill-h:26px;      /* status pills                 */
   --mark:36px;        /* brand mark square            */
   --cbox:22px;        /* checkbox square              */
+  --cbox-s:16px;      /* dense row checkbox           */
   --step:30px;        /* numbered-step circle         */
   --spin:18px; --spin-s:12px;
   --dot:6px;   --dot-l:8px;
@@ -401,7 +402,13 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   color:var(--ink-3);margin:var(--sp-4) 0 var(--sp-2)}
 .rrow{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) 0;
   border-top:var(--bw) solid var(--line-1);min-height:var(--hit)}
-.rrow .ic{color:var(--ink-4)}
+.rrow>.ic,.rrow .r-main .ic{color:var(--ink-4)}
+/* The tick inside a checkbox must never inherit the row's icon colour: an empty
+   box showing a grey tick reads as SELECTED, and this screen deletes things. */
+.rrow .cbox .ic{color:inherit}
+.cbox{color:transparent}
+input:checked+.cbox{color:var(--accent-ink)}
+input:indeterminate+.cbox{color:var(--accent)}
 .r-main{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.35}
 .r-file{font-family:var(--mono);font-size:var(--fs-0);font-weight:600;color:var(--ink-1);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -451,7 +458,7 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
 .tree-chev{width:var(--ic-s);height:var(--ic-s);flex:none;stroke:currentColor;fill:none;
   stroke-width:var(--stroke-s);stroke-linecap:round;stroke-linejoin:round;
   color:var(--ink-4);transition:transform .12s}
-li.tdir.open>.tree-row .tree-chev{transform:rotate(90deg)}
+li.tdir.open>.tline>.tree-row .tree-chev{transform:rotate(90deg)}
 .fv-crumb{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;min-width:0;
   font-family:var(--mono);font-size:var(--fs-0)}
 .fv-crumb button{border:0;background:transparent;cursor:pointer;color:var(--ink-3);
@@ -844,6 +851,41 @@ button.site-card{font:inherit;text-align:left;width:100%}
 .titem.flash-err{animation:rowerr 1s ease}
 @keyframes rowok{from{background:var(--ok-dim)}}
 @keyframes rowerr{from{background:var(--err-dim)}}
+
+/* ============================================================
+   v7: FILES MULTI-SELECT + PER-ROW ACTIONS
+   A tick box on every row — tree and listing, files and folders —
+   a selection bar with the two actions, and rename/delete right
+   on each listing row so nothing needs the tree for a normal job.
+   ============================================================ */
+.cbox-s{width:var(--cbox-s);height:var(--cbox-s);border-radius:var(--r-0)}
+.rowck{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:var(--row-min);min-height:var(--row-min);cursor:pointer;border-radius:var(--r-1)}
+.rowck:hover .cbox{border-color:var(--accent)}
+.rowck:has(input:focus-visible){box-shadow:var(--ring)}
+.tline{display:flex;align-items:center;min-width:0}
+.tline>.tree-row{flex:1;min-width:0}
+.selbar{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);align-items:center;
+  background:var(--accent-dim);border:var(--bw) solid var(--accent-line);border-radius:var(--r-2);
+  padding:var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);margin-bottom:var(--sp-4)}
+.selbar-count{font-size:var(--fs-0);font-weight:650;color:var(--ink-1);flex:1 1 200px;min-width:0}
+.selbar-actions{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-left:auto}
+/* the armed Delete spells out the whole selection — let it wrap rather than
+   prop the layout open on a phone (a .btn is nowrap by default) */
+.selbar-actions .btn{white-space:normal}
+.fv-listbar{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);align-items:center;
+  margin-bottom:var(--sp-2);border-bottom:var(--bw) solid var(--line-1);padding-bottom:var(--sp-1)}
+.fv-total{font-size:var(--fs--1);color:var(--ink-3);margin-left:auto;
+  font-variant-numeric:tabular-nums}
+/* shift-click ranges must not smear a text selection across the rows */
+.fv-list .rrow{user-select:none}
+.rowact{display:flex;gap:var(--sp-1);flex:0 1 auto;min-width:0;align-items:center;
+  opacity:0;transition:opacity .12s}
+.rrow:hover .rowact,.rrow:focus-within .rowact,.rowact.armed{opacity:1}
+@media (hover:none){.rowact{opacity:1}}   /* no hover on touch — keep them visible */
+.rowact .ra{min-height:var(--row-min);width:var(--row-min);min-width:var(--row-min);padding:0}
+.rowact .ra-danger{color:var(--err)}
+.rowact .btn-danger{white-space:normal;min-height:var(--row-min);padding:var(--sp-1) var(--sp-3)}
 </style>
 </head>
 <body>
@@ -1003,6 +1045,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
         </div>
       </header>
       <div id="fvBanner"></div>
+      <div id="fvSelBar" hidden></div>
       <div id="fvPick"></div>
       <div class="files-grid" id="fvGrid" hidden>
         <section class="panel fv-treewrap" aria-label="Repository tree">
@@ -1159,7 +1202,14 @@ button.site-card{font:inherit;text-align:left;width:100%}
   <h3>Upload files, or a whole folder</h3>
   <p><em>Upload files</em> takes one or more files from your computer and puts them in the folder you are looking at. <em>Upload folder</em> takes a <strong>complete folder</strong> — subfolders and all — and lands its contents where you are browsing, keeping the structure. You can also simply <strong>drag files or folders from your computer</strong> and drop them on the tree or on the file pane: they land in the folder you are browsing, and a dropped folder keeps its name and everything inside it. Either way everything arrives as <strong>one</strong> recorded change, so the history stays clean.</p>
   <h3>Rename and delete</h3>
-  <p>With a file open, <em>Rename</em> and <em>Delete</em> sit above it. Deleting needs two presses — the second press is the confirmation. To delete a whole folder, click the folder in the tree, then press <em>Delete folder</em>: the button tells you first how many files are inside, and that count is exactly what will be removed.</p>
+  <p>Point at any row in the folder listing and its own <em>Rename</em> and <em>Delete</em> buttons appear right on the row — no need to open the file first. With a file open, <em>Rename</em> and <em>Delete</em> also sit above it. Deleting always needs two presses — the second press is the confirmation. To delete a whole folder, use the bin on its row, or open it and press <em>Delete folder</em>: the button tells you first how many files are inside, and that count is exactly what will be removed.</p>
+  <h3>Select several things and delete them together</h3>
+  <ol class="steps">
+    <li><strong>Tick what should go.</strong> Every row has a tick box — files and folders, in the folder listing and in the tree — and you can mix them freely. <em>Select all</em> above the listing ticks everything in the folder you are looking at, and the counter next to it says how much of that folder is ticked. Holding <strong>Shift</strong> while clicking a row selects the whole range from the last one you ticked; holding <strong>Ctrl</strong> (Cmd on a Mac) toggles a single row without opening it.</li>
+    <li><strong>Read the bar.</strong> As soon as anything is ticked, a bar appears above the files saying exactly what is selected — for example <em>2 files and 1 folder (7 files in total)</em>. A ticked folder counts as everything inside it.</li>
+    <li><strong>Press <em>Delete selected</em>, then press it again.</strong> Before the second press the button spells out exactly what will go. Everything is removed together as <strong>one</strong> recorded change — one line in the history, one rebuild.</li>
+  </ol>
+  <p><em>Clear selection</em> — or the Escape key — unticks everything without deleting anything. The Delete key on your keyboard starts the same two-press delete. If the file open in the editor is among what you delete, the editor simply closes with it.</p>
   <h3>Edit and save</h3>
   <p>Text files open in the editor with line numbers and colours by file type — HTML, PHP, CSS, JS and friends. Change what you need and press <em>Save</em>, or Ctrl+S (Cmd+S on a Mac). If you try to leave with unsaved changes, the panel asks first. Very large files open as plain text so the screen stays fast; pictures show a preview instead of opening in the editor.</p>
   <h3>&ldquo;Heroku cannot build this app yet&rdquo;</h3>
@@ -1345,10 +1395,10 @@ const MOCK_API=(()=>{
   const db={
     me:null,
     sites:[
-      {id:'101',label:'northgate-supply',url:H('northgate-supply'),app:'northgate-supply',app_url:H('northgate-supply'),owner:'northgate-ops',repo:'northgate-site',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:null},
-      {id:'102',label:'brightleaf-web',url:H('brightleaf-web'),app:'brightleaf-web',app_url:H('brightleaf-web'),owner:'northgate-ops',repo:'brightleaf-web',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:'php'},
+      {id:'101',label:'northgate-supply',url:H('northgate-supply'),app:'northgate-supply',app_url:H('northgate-supply'),owner:'northgate-ops',repo:'northgate-site',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:null,buildpack_checked:true},
+      {id:'102',label:'brightleaf-web',url:H('brightleaf-web'),app:'brightleaf-web',app_url:H('brightleaf-web'),owner:'northgate-ops',repo:'brightleaf-web',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:'php',buildpack_checked:true},
       {id:'103',label:'harbourpoint-demo',url:H('harbourpoint-demo'),app:'harbourpoint-demo',app_url:H('harbourpoint-demo'),owner:null,repo:null,branch:null,dir:'public/',linked:false,account:'h1'},
-      {id:'104',label:'clearwater-labs',url:H('clearwater-labs'),app:'clearwater-labs',app_url:H('clearwater-labs'),owner:'northgate-ops',repo:'clearwater-labs',branch:'main',dir:'public/',linked:true,account:'h1'},
+      {id:'104',label:'clearwater-labs',url:H('clearwater-labs'),app:'clearwater-labs',app_url:H('clearwater-labs'),owner:'northgate-ops',repo:'clearwater-labs',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:null,buildpack_checked:false},
       {id:'105',label:'summit-tools',url:H('summit-tools'),app:'summit-tools',app_url:H('summit-tools'),owner:'northgate-ops',repo:'summit-tools',branch:'main',dir:'dist/',linked:true,account:'h1'},
       {id:'106',label:'holding-page',url:H('holding-page'),app:'holding-page',app_url:H('holding-page'),owner:null,repo:null,branch:null,dir:'public/',linked:false,account:'h1'}
     ],
@@ -1383,8 +1433,9 @@ const MOCK_API=(()=>{
     batches:{}
   };
   let seq=200;
-  /* mock filesystem — one per app, made on first open. buildpack:null so the
-     "Make it deployable" banner and the editor can both be seen offline. */
+  /* mock filesystem — one per app, made on first open. The buildpack comes
+     from the app's own record, so northgate (null, checked) shows the
+     "Make it deployable" banner offline while brightleaf (php) stays quiet. */
   const FS={};
   const b64=s=>btoa(unescape(encodeURIComponent(s)));
   const PX_PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -1396,7 +1447,8 @@ const MOCK_API=(()=>{
     f.set('public/js/app.js',b64("// tiny sample script\nconst greeting='Hello from the sample app';\nfunction start(){\n  console.log(greeting, 40 + 2);\n}\ndocument.addEventListener('DOMContentLoaded', start);\n"));
     f.set('public/img/logo.png',PX_PNG);
     f.set('README.md',b64('# Sample site\n\nA small demo repository so the Files screen can be tried offline.\n\n- `public/` holds the pages\n- edit `public/index.html` and press Save\n'));
-    FS[id]={buildpack:null,files:f};
+    const site=db.sites.find(s=>String(s.id)===String(id));
+    FS[id]={buildpack:site&&site.buildpack!==undefined?site.buildpack:null,files:f};
     return FS[id];
   }
   /* Deep-clone every mock reply so callers cannot mutate the fake database by
@@ -1615,8 +1667,9 @@ const MOCK_API=(()=>{
         entries.push({path:fp,type:'blob',size:atob(fb).length,sha:'sha-'+fp});
       }
       [...dirs].sort().forEach(d=>entries.push({path:d,type:'tree',size:0,sha:'tree-'+d}));
+      /* buildpack_checked: this read HAS looked at the repository */
       return delay({app:s.app,repo:(s.owner||'account')+'/'+(s.repo||''),branch:s.branch||'main',
-        truncated:false,entries,buildpack:fs.buildpack});
+        truncated:false,entries,buildpack:fs.buildpack,buildpack_checked:true});
     }
     if(p[0]==='file'&&p.length===1&&method==='GET'){
       const q=new URLSearchParams(path.split('?')[1]||'');
@@ -1821,7 +1874,13 @@ function renderSites(){
         <button type="button" class="btn btn-secondary btn-sm sc-fix" data-act="pick-repo" data-id="${id}">${ic('link','ic ic-s')}Choose a repository</button>
       </span>
     </div>`;
-    const bp=('buildpack' in s)?s.buildpack:S.bp[String(s.id)];
+    /* v7: warn only when the repository has actually been LOOKED AT —
+       buildpack_checked from /api/state, or a Files read this session
+       (S.bp holds only checked verdicts). An unchecked app says nothing
+       at all: no warning, no icon. */
+    const bpSeen=(String(s.id) in S.bp);
+    const bpChecked=bpSeen||s.buildpack_checked===true;
+    const bp=bpSeen?S.bp[String(s.id)]:s.buildpack;
     return `
     <label class="site-card">
       <input type="checkbox" class="vh" value="${id}" ${S.selected.has(String(s.id))?'checked':''} aria-label="Update ${esc(s.app||s.label)}">
@@ -1833,7 +1892,7 @@ function renderSites(){
           <span class="chip">${ic('branch','ic ic-s')}${esc(s.owner)}/${esc(s.repo)}</span>
           <button type="button" class="chip chipbtn" data-act="open-files" data-id="${id}" title="Open the files of this app" aria-label="Open the files of ${esc(s.app||s.label)}">${ic('folder','ic ic-s')}${esc(s.dir)}</button>
         </span>
-        ${bp===null?`<span class="sc-bp">${ic('alert','ic ic-s')}<span>Heroku cannot build this app yet — it only sees web pages, not an application. Open the folder to fix it.</span></span>`:''}
+        ${bpChecked&&bp===null?`<span class="sc-bp">${ic('alert','ic ic-s')}<span>Heroku cannot build this app yet — it only sees web pages, not an application. Open the folder to fix it.</span></span>`:''}
       </span>
     </label>`;}).join('');
   updateSelUI();
@@ -2309,7 +2368,7 @@ $('#activityBody').addEventListener('click',async e=>{
     const id=b.dataset.id;
     b.setAttribute('aria-busy','true');b.innerHTML='<span class="spin spin-s"></span>Undoing…';
     try{
-      await api('/api/undo/'+id);
+      await api('/api/undo/'+id,{method:'POST',body:{}});
       S.undoAsk=null;S.undoneRecent.add(id);
       if(S.batch&&S.batch.id===id){
         const r=await api('/api/batch/'+id);
@@ -2393,7 +2452,7 @@ function fvGuard(){return!fvDirty()||window.confirm('You have unsaved changes in
 function openFiles(appId){
   if(!fvGuard())return;
   S.fv={appId:String(appId),loading:true,error:null,cwd:'',open:null,dirty:false,
-    fileData:null,openDirs:new Set(),armed:null};
+    fileData:null,openDirs:new Set(),armed:null,sel:new Set(),selAnchor:null};
   showView('files');
 }
 
@@ -2401,7 +2460,7 @@ function renderFiles(){
   fvSyncEditor();
   const tools=$('#fvTools'),grid=$('#fvGrid'),pick=$('#fvPick'),banner=$('#fvBanner');
   if(!S.fv){ /* no app open yet — offer the linked apps */
-    tools.hidden=true;grid.hidden=true;banner.innerHTML='';
+    tools.hidden=true;grid.hidden=true;banner.innerHTML='';renderFvSelBar();
     const linked=((S.state&&S.state.sites)||[]).filter(s=>s.linked);
     pick.innerHTML=linked.length?`
       <section class="panel"><h2 class="panel-title">${ic('folder')}Pick an app</h2>
@@ -2418,19 +2477,21 @@ function renderFiles(){
   }
   pick.innerHTML='';
   if(S.fv.loading){
-    tools.hidden=true;grid.hidden=true;
+    tools.hidden=true;grid.hidden=true;renderFvSelBar();
     banner.innerHTML='<p class="empty"><span class="spin spin-s"></span> Reading the repository&hellip;</p>';
     fvLoadTree();
     return;
   }
   if(S.fv.error){
-    tools.hidden=true;grid.hidden=true;
+    tools.hidden=true;grid.hidden=true;renderFvSelBar();
     banner.innerHTML='<p class="empty">Could not read the repository — '+esc(S.fv.error)+'</p>';
     return;
   }
   tools.hidden=false;grid.hidden=false;
   const bp=S.fv.buildpack;
-  banner.innerHTML=bp===null?`
+  /* only warn once the repository has actually been looked at; an unchecked
+     app says nothing at all — no warning, no icon */
+  banner.innerHTML=(S.fv.bpChecked&&bp===null)?`
     <div class="bp-banner">${ic('alert')}
       <span><strong>Heroku cannot build this app yet — it only sees web pages, not an application.</strong>
         <span class="bp-sub">Make it deployable adds one small index.php that serves your existing index.html. Your pages are not touched.</span></span>
@@ -2450,6 +2511,7 @@ function renderFiles(){
     +(S.fv.truncated?'<span class="p-dim">Large repository — the list may be incomplete.</span>':'');
   $('#fvTree').innerHTML=fvTreeHTML(fvRoot(),'');
   renderFilePane();
+  renderFvSelBar();
 }
 
 async function fvLoadTree(){
@@ -2462,10 +2524,23 @@ async function fvLoadTree(){
     S.fv.fetching=false;
     Object.assign(S.fv,{loading:false,error:null,app:r.app,repo:r.repo,branch:r.branch,
       truncated:!!r.truncated,entries:(r.entries||[]).slice(),
-      buildpack:r.buildpack===undefined?null:r.buildpack});
-    S.bp[id]=S.fv.buildpack;
+      buildpack:r.buildpack===undefined?null:r.buildpack,
+      /* Only the server's explicit flag decides this. The old test was
+         `r.buildpack!==undefined`, and null!==undefined is TRUE, so every app
+         counted as checked and an unexamined repo was accused of being
+         unbuildable — then cached, which spread it to the deploy card. */
+      bpChecked:r.buildpack_checked===true});
+    /* the cache holds only CHECKED verdicts — an unchecked app must never
+       start warning on the Deploy cards */
+    if(S.fv.bpChecked)S.bp[id]=S.fv.buildpack;
     /* drop selections that no longer exist */
     if(S.fv.open&&!S.fv.entries.some(e=>e.type==='blob'&&e.path===S.fv.open)){S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;}
+    if(S.fv.sel&&S.fv.sel.size)S.fv.sel=new Set([...S.fv.sel].filter(k=>{
+      const p=k.slice(2);
+      return k.charAt(0)==='f'
+        ?S.fv.entries.some(e=>e.type==='blob'&&e.path===p)
+        :S.fv.entries.some(e=>(e.type==='tree'&&e.path===p)||(e.type==='blob'&&e.path.startsWith(p+'/')));
+    }));
     if(S.view==='files')renderFiles();
   }catch(ex){
     if(!S.fv||S.fv.appId!==id)return;
@@ -2494,23 +2569,28 @@ function fvRoot(){
   return root;
 }
 function fvTreeHTML(node,prefix){
-  const dirs=[...node.dirs.keys()].sort((a,b)=>a.localeCompare(b));
-  const files=node.files.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const dirs=[...node.dirs.keys()].sort(nameSort);
+  const files=node.files.slice().sort((a,b)=>nameSort(a.name,b.name));
   let h='<ul class="tree-kids">';
   for(const d of dirs){
     const p=prefix?prefix+'/'+d:d;
     const open=S.fv.openDirs.has(p);
     h+=`<li class="tdir${open?' open':''}">
-      <button type="button" class="tree-row" data-dir="${esc(p)}" aria-expanded="${open}" aria-current="${S.fv.cwd===p&&!S.fv.open?'true':'false'}">
-        <svg class="tree-chev" aria-hidden="true"><use href="#i-chev"/></svg>
-        ${ic('folder','ic ic-s')}<span class="tname">${esc(d)}</span></button>
+      <div class="tline">
+        ${fvCkHTML('d',p,'Select folder '+d)}
+        <button type="button" class="tree-row" data-dir="${esc(p)}" aria-expanded="${open}" aria-current="${S.fv.cwd===p&&!S.fv.open?'true':'false'}">
+          <svg class="tree-chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          ${ic('folder','ic ic-s')}<span class="tname">${esc(d)}</span></button>
+      </div>
       ${open?fvTreeHTML(node.dirs.get(d),p):''}</li>`;
   }
   for(const f of files){
-    h+=`<li><button type="button" class="tree-row" data-file="${esc(f.path)}" aria-current="${S.fv.open===f.path?'true':'false'}">
+    h+=`<li><div class="tline">
+      ${fvCkHTML('f',f.path,'Select '+f.name)}
+      <button type="button" class="tree-row" data-file="${esc(f.path)}" aria-current="${S.fv.open===f.path?'true':'false'}">
       <svg class="tree-chev" aria-hidden="true"></svg>
       ${ic(BIN_EXT.has(extOf(f.name))?(IMG_EXT.has(extOf(f.name))?'image':'file'):'file','ic ic-s')}<span class="tname">${esc(f.name)}</span>
-      <span class="tree-size">${fmtBytes(f.size)}</span></button></li>`;
+      <span class="tree-size">${fmtBytes(f.size)}</span></button></div></li>`;
   }
   return h+'</ul>';
 }
@@ -2537,6 +2617,153 @@ function fvOpenParents(path){
   for(const sg of segs){p=p?p+'/'+sg:sg;S.fv.openDirs.add(p);}
 }
 
+/* ======================================================================
+   v7: MULTI-SELECT. The selection is a Set of "f:path" / "d:path" keys on
+   S.fv. Deleting sends ONE request — folder PATHS ride in `remove` and the
+   server expands each folder to everything beneath it; nothing is expanded
+   client-side.
+   ====================================================================== */
+/* folders before files is done by the callers; this makes each group
+   case-insensitive AND stable (the case-sensitive compare breaks ties) */
+const nameSort=(a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'})||(a<b?-1:a>b?1:0);
+function fvCkHTML(kind,path,label){
+  return `<label class="rowck" title="Select"><input type="checkbox" class="vh" data-ck="${esc(path)}" data-cktype="${kind}" ${S.fv.sel&&S.fv.sel.has(kind+':'+path)?'checked':''} aria-label="${esc(label)}"><span class="cbox cbox-s" aria-hidden="true">${ic('check','ic ic-s')}</span></label>`;
+}
+function fvToggleSel(kind,path,forceOn){
+  const k=kind+':'+path;
+  if(forceOn===true)S.fv.sel.add(k);
+  else if(forceOn===false)S.fv.sel.delete(k);
+  else if(S.fv.sel.has(k))S.fv.sel.delete(k);else S.fv.sel.add(k);
+  if(S.fv.armed==='delsel')S.fv.armed=null;  /* what "selected" means changed */
+}
+/* the rows of the CURRENT listing, in the exact order they are drawn */
+function fvListingRows(){
+  if(!S.fv||S.fv.open!=null)return[];
+  const node=fvNodeAt(S.fv.cwd);
+  if(!node)return[];
+  const dirs=[...node.dirs.keys()].sort(nameSort);
+  const files=node.files.slice().sort((a,b)=>nameSort(a.name,b.name));
+  return dirs.map(d=>({kind:'d',path:S.fv.cwd?S.fv.cwd+'/'+d:d}))
+    .concat(files.map(f=>({kind:'f',path:f.path})));
+}
+function fvSelSummary(){
+  const dirsAll=[],filesAll=[];
+  for(const k of S.fv.sel)(k.charAt(0)==='d'?dirsAll:filesAll).push(k.slice(2));
+  /* anything sitting under a selected folder is already covered by it —
+     send the folder path once, never its children as well */
+  const dirs=dirsAll.filter(d=>!dirsAll.some(o=>o!==d&&d.startsWith(o+'/')));
+  const files=filesAll.filter(f=>!dirs.some(d=>f.startsWith(d+'/')));
+  const totalFiles=files.length+dirs.reduce((a,d)=>a+filesUnder(d).length,0);
+  return{dirs,files,totalFiles};
+}
+function fvSelPhrase(sum){
+  const parts=[];
+  if(sum.files.length)parts.push(sum.files.length+' file'+(sum.files.length===1?'':'s'));
+  if(sum.dirs.length)parts.push(sum.dirs.length+' folder'+(sum.dirs.length===1?'':'s'));
+  let s=parts.join(' and ')||'nothing';
+  if(sum.dirs.length&&sum.totalFiles!==sum.files.length)
+    s+=' ('+sum.totalFiles+' file'+(sum.totalFiles===1?'':'s')+' in total)';
+  return s;
+}
+function renderFvSelBar(){
+  const bar=$('#fvSelBar');
+  if(!bar)return;
+  if(!S.fv||S.fv.loading||S.fv.error||!S.fv.sel||!S.fv.sel.size){
+    bar.hidden=true;bar.innerHTML='';
+    if(S.fv&&S.fv.armed==='delsel')S.fv.armed=null;
+    return;
+  }
+  const phrase=fvSelPhrase(fvSelSummary());
+  bar.hidden=false;
+  bar.innerHTML=`<div class="selbar" role="region" aria-label="Selection">
+    <span class="selbar-count">${esc(phrase)} selected</span>
+    <div class="selbar-actions">
+      <button type="button" class="btn btn-danger btn-sm" data-selact="del">${ic('trash','ic ic-s')}${
+        S.fv.armed==='delsel'?'Delete '+esc(phrase)+'? Press again to confirm':'Delete selected'}</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-selact="clear">${ic('x','ic ic-s')}Clear selection</button>
+    </div></div>`;
+}
+/* keeps every visible tick, the Select-all state and the bar in step with
+   S.fv.sel WITHOUT re-rendering the panes — a tree tick while the editor is
+   open must never remount the editor */
+function fvSelRefreshUI(){
+  if(!S.fv)return;
+  $$('#view-files input[data-ck]').forEach(i=>{
+    i.checked=S.fv.sel.has(i.dataset.cktype+':'+i.dataset.ck);
+  });
+  const all=$('#fvSelAll');
+  if(all){
+    const rows=fvListingRows();
+    const nSel=rows.filter(r=>S.fv.sel.has(r.kind+':'+r.path)).length;
+    all.checked=rows.length>0&&nSel===rows.length;
+    all.indeterminate=nSel>0&&nSel<rows.length;
+    const c=$('#fvSelCount');
+    if(c)c.textContent=nSel?nSel+' of '+rows.length+' selected':'';
+  }
+  renderFvSelBar();
+}
+async function fvDeleteSelected(btn){
+  if(!S.fv||S.fv.loading||S.fv.error||S.fv.deleting)return;
+  const sum=fvSelSummary();
+  const remove=[...sum.dirs,...sum.files];
+  if(!remove.length)return;
+  const phrase=fvSelPhrase(sum);
+  S.fv.deleting=true;
+  if(btn)busy(btn,true,'Deleting…');
+  try{
+    /* ONE request for the whole selection; folders travel as folder paths */
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete '+phrase,remove}});
+    for(const p of remove){
+      fvRemoveUnder(p);
+      for(const od of[...S.fv.openDirs])if(od===p||od.startsWith(p+'/'))S.fv.openDirs.delete(od);
+    }
+    /* the open file may just have gone — close the editor cleanly and never
+       leave a dirty flag pointing at a file that no longer exists */
+    if(S.fv.open!=null&&!S.fv.entries.some(e=>e.type==='blob'&&e.path===S.fv.open)){
+      S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;
+    }
+    while(S.fv.cwd&&!fvNodeAt(S.fv.cwd))S.fv.cwd=parentOf(S.fv.cwd);
+    S.fv.sel.clear();S.fv.selAnchor=null;S.fv.armed=null;S.fv.deleting=false;
+    renderFiles();
+    toast('Deleted '+phrase+'.','ok');
+    announce('Deleted '+phrase+'.');
+  }catch(ex){
+    S.fv.deleting=false;
+    if(btn)busy(btn,false);
+    S.fv.armed=null;renderFvSelBar();toast(ex.message,'err');
+  }
+}
+/* rename straight from a listing row — fetches the content only if the file
+   is not the one already open in the editor */
+function fvRowRename(path){
+  const dir=parentOf(path),oldName=path.split('/').pop();
+  fvPrompt('Rename','New name',oldName,async v=>{
+    const name=fvCheckName(v);
+    const np=(dir?dir+'/':'')+name;
+    if(np===path)return;
+    if(S.fv.entries.some(en=>en.type==='blob'&&en.path===np))throw new Error('A file with that name already exists.');
+    let content,size;
+    if(S.fv.open===path&&S.fv.fileData){
+      fvSyncEditor();
+      content=String(S.fv.fileData.contentB64||'').replace(/\s+/g,'');
+      size=S.fv.fileData.size||0;
+    }else{
+      const r=await api('/api/file?app='+encodeURIComponent(S.fv.appId)+'&path='+encodeURIComponent(path));
+      content=String(r.contentB64||'').replace(/\s+/g,'');
+      size=r.size||0;
+    }
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{
+      message:'Rename '+oldName+' to '+name,
+      files:[{path:np,contentB64:content}],remove:[path]}});
+    fvRemoveUnder(path);fvAddEntry(np,size);
+    if(S.fv.sel.delete('f:'+path))S.fv.sel.add('f:'+np);
+    if(S.fv.open===path){S.fv.open=np;S.fv.cwd=parentOf(np);}
+    renderFiles();
+    flashPaths([np]);
+    toast('Renamed to '+name+'.','ok');
+  });
+}
+
 function fvCrumbHTML(){
   const base=S.fv.open!=null?S.fv.open:S.fv.cwd;
   let h='<nav class="fv-crumb" aria-label="Where you are"><button type="button" data-crumb="">'+esc(S.fv.app||S.fv.repo||'root')+'</button>';
@@ -2557,26 +2784,56 @@ function renderFilePane(){
   const head=$('#fvPaneHead'),body=$('#fvPaneBody');
   if(S.fv.open==null){ /* browsing a folder */
     const dir=S.fv.cwd,inside=filesUnder(dir),node=fvNodeAt(dir);
+    const bytes=inside.reduce((a,e)=>a+(e.size||0),0);
     head.innerHTML=fvCrumbHTML()+`
       <div class="fv-pane-actions">
         ${dir?`<button type="button" class="btn btn-danger btn-sm" data-fv="deldir">${ic('trash','ic ic-s')}${S.fv.armed==='deldir'
           ?'Press again to delete '+inside.length+' file'+(inside.length===1?'':'s')
           :'Delete folder'}</button>`:''}
       </div>`;
-    let rows='';
+    let rows='',rowCount=0;
     if(node){
-      const dirs=[...node.dirs.keys()].sort((a,b)=>a.localeCompare(b));
-      const files=node.files.slice().sort((a,b)=>a.name.localeCompare(b.name));
+      const dirs=[...node.dirs.keys()].sort(nameSort);
+      const files=node.files.slice().sort((a,b)=>nameSort(a.name,b.name));
+      rowCount=dirs.length+files.length;
       rows=dirs.map(d=>{
-        const p=dir?dir+'/'+d:d;
-        return `<div class="rrow" data-godir="${esc(p)}">${ic('folder')}<div class="r-main"><span class="r-file">${esc(d)}/</span><span class="r-meta">${filesUnder(p).length} file${filesUnder(p).length===1?'':'s'}</span></div></div>`;
-      }).join('')+files.map(f=>
-        `<div class="rrow" data-gofile="${esc(f.path)}">${ic(IMG_EXT.has(extOf(f.name))?'image':'file')}<div class="r-main"><span class="r-file">${esc(f.name)}</span></div><span class="r-res">${fmtBytes(f.size)}</span></div>`
-      ).join('');
+        const p=dir?dir+'/'+d:d,nIn=filesUnder(p),armed=S.fv.armed==='rdd:'+p;
+        const inBytes=nIn.reduce((a,e)=>a+(e.size||0),0);
+        return `<div class="rrow" data-godir="${esc(p)}">
+          ${fvCkHTML('d',p,'Select folder '+d)}
+          ${ic('folder')}
+          <div class="r-main"><span class="r-file">${esc(d)}/</span><span class="r-meta">${nIn.length} file${nIn.length===1?'':'s'}${nIn.length?' · '+fmtBytes(inBytes):''}</span></div>
+          <span class="rowact${armed?' armed':''}">${armed
+            ?`<button type="button" class="btn btn-danger btn-sm" data-rowact="deldir" data-path="${esc(p)}">Press again — deletes ${nIn.length} file${nIn.length===1?'':'s'}</button>`
+            :`<button type="button" class="btn btn-ghost btn-ic ra ra-danger" data-rowact="deldir" data-path="${esc(p)}" title="Delete folder" aria-label="Delete folder ${esc(d)}">${ic('trash','ic ic-s')}</button>`}</span>
+        </div>`;
+      }).join('')+files.map(f=>{
+        const armed=S.fv.armed==='rf:'+f.path;
+        return `<div class="rrow" data-gofile="${esc(f.path)}">
+          ${fvCkHTML('f',f.path,'Select '+f.name)}
+          ${ic(IMG_EXT.has(extOf(f.name))?'image':'file')}
+          <div class="r-main"><span class="r-file">${esc(f.name)}</span></div>
+          <span class="r-res">${fmtBytes(f.size)}</span>
+          <span class="rowact${armed?' armed':''}">
+            <button type="button" class="btn btn-ghost btn-ic ra" data-rowact="ren" data-path="${esc(f.path)}" title="Rename" aria-label="Rename ${esc(f.name)}">${ic('edit','ic ic-s')}</button>
+            ${armed
+              ?`<button type="button" class="btn btn-danger btn-sm" data-rowact="delf" data-path="${esc(f.path)}">Press again to delete</button>`
+              :`<button type="button" class="btn btn-ghost btn-ic ra ra-danger" data-rowact="delf" data-path="${esc(f.path)}" title="Delete" aria-label="Delete ${esc(f.name)}">${ic('trash','ic ic-s')}</button>`}
+          </span>
+        </div>`;
+      }).join('');
     }
     body.innerHTML=`
-      <p class="fv-note">${inside.length} file${inside.length===1?'':'s'} ${dir?'in this folder and below':'in this repository'}. New files, new folders and uploads land here.</p>
-      <div class="fv-list">${rows||'<p class="empty">This folder is empty.</p>'}</div>`;
+      <div class="fv-listbar">
+        <label class="checkline"><input type="checkbox" class="vh" id="fvSelAll" ${rowCount?'':'disabled'} aria-label="Select everything in this folder">
+          <span class="cbox" aria-hidden="true">${ic('check','ic ic-s')}</span>Select all</label>
+        <span class="count" id="fvSelCount"></span>
+        <span class="fv-total">${inside.length} file${inside.length===1?'':'s'}${inside.length?' · '+fmtBytes(bytes):''} ${dir?'in this folder and below':'in this repository'}</span>
+      </div>
+      <div class="fv-list">${rows||(dir
+        ?'<p class="empty">This folder is empty — new files, new folders and uploads land here while you are looking at it.</p>'
+        :'<p class="empty">Nothing in this repository yet — New file, New folder and the upload buttons above all add the first thing.</p>')}</div>`;
+    fvSelRefreshUI();
     return;
   }
   /* a file is open */
@@ -2814,7 +3071,14 @@ function fvUpload(fileList,stripRoot){
 
 /* ---- files view: wiring (delegated, static elements) ---- */
 $('#fvTree').addEventListener('click',e=>{
+  if(e.target.closest('.rowck'))return;   /* the tick handles itself */
   const b=e.target.closest('.tree-row');if(!b)return;
+  if(e.ctrlKey||e.metaKey){                /* Ctrl/Cmd-click toggles the selection */
+    const kind=b.dataset.file!==undefined?'f':'d';
+    fvToggleSel(kind,kind==='f'?b.dataset.file:b.dataset.dir);
+    fvSelRefreshUI();
+    return;
+  }
   if(b.dataset.file!==undefined){fvOpenFile(b.dataset.file);return;}
   const p=b.dataset.dir;
   if(!fvGuard())return;
@@ -2860,6 +3124,7 @@ $('#fvPaneHead').addEventListener('click',e=>{
         files:[{path:np,contentB64:content}],remove:[old]}});
       const size=(S.fv.fileData&&S.fv.fileData.size)||0;
       fvRemoveUnder(old);fvAddEntry(np,size);
+      if(S.fv.sel.delete('f:'+old))S.fv.sel.add('f:'+np);
       S.fv.open=np;S.fv.cwd=parentOf(np);
       renderFiles();
       flashPaths([np]);
@@ -2874,6 +3139,7 @@ $('#fvPaneHead').addEventListener('click',e=>{
       try{
         await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete '+path.split('/').pop(),remove:[path]}});
         fvRemoveUnder(path);
+        S.fv.sel.delete('f:'+path);
         S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;
         renderFiles();
         toast('Deleted '+path.split('/').pop()+'.','ok');
@@ -2888,7 +3154,8 @@ $('#fvPaneHead').addEventListener('click',e=>{
       try{
         await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete folder '+dir,remove:[dir]}});
         fvRemoveUnder(dir);
-        S.fv.openDirs.delete(dir);
+        for(const od of[...S.fv.openDirs])if(od===dir||od.startsWith(dir+'/'))S.fv.openDirs.delete(od);
+        for(const k of[...S.fv.sel])if(k.slice(2)===dir||k.slice(2).startsWith(dir+'/'))S.fv.sel.delete(k);
         S.fv.cwd=parentOf(dir);S.fv.armed=null;
         renderFiles();
         toast('Folder deleted — '+inside.length+' file'+(inside.length===1?'':'s')+' removed.','ok');
@@ -2897,10 +3164,124 @@ $('#fvPaneHead').addEventListener('click',e=>{
   }
 });
 $('#fvPaneBody').addEventListener('click',e=>{
-  const d=e.target.closest('[data-godir]');
-  if(d){fvBrowse(d.dataset.godir);return;}
-  const f=e.target.closest('[data-gofile]');
-  if(f)fvOpenFile(f.dataset.gofile);
+  if(!S.fv)return;
+  if(e.target.closest('.rowck'))return;   /* the tick handles itself */
+  /* per-row rename/delete — each delete is the panel's two-press pattern */
+  const act=e.target.closest('[data-rowact]');
+  if(act){
+    const p=act.dataset.path,ra=act.dataset.rowact;
+    if(ra==='ren'){fvRowRename(p);return;}
+    if(ra==='delf'){
+      if(S.fv.armed!=='rf:'+p){S.fv.armed='rf:'+p;renderFilePane();return;}
+      (async()=>{
+        try{
+          await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete '+p.split('/').pop(),remove:[p]}});
+          fvRemoveUnder(p);S.fv.sel.delete('f:'+p);
+          S.fv.armed=null;
+          renderFiles();
+          toast('Deleted '+p.split('/').pop()+'.','ok');
+        }catch(ex){S.fv.armed=null;renderFilePane();toast(ex.message,'err');}
+      })();
+      return;
+    }
+    if(ra==='deldir'){
+      const n=filesUnder(p).length;
+      if(S.fv.armed!=='rdd:'+p){S.fv.armed='rdd:'+p;renderFilePane();return;}
+      (async()=>{
+        try{
+          await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete folder '+p,remove:[p]}});
+          fvRemoveUnder(p);
+          for(const od of[...S.fv.openDirs])if(od===p||od.startsWith(p+'/'))S.fv.openDirs.delete(od);
+          for(const k of[...S.fv.sel])if(k.slice(2)===p||k.slice(2).startsWith(p+'/'))S.fv.sel.delete(k);
+          S.fv.armed=null;
+          renderFiles();
+          toast('Folder deleted — '+n+' file'+(n===1?'':'s')+' removed.','ok');
+        }catch(ex){S.fv.armed=null;renderFilePane();toast(ex.message,'err');}
+      })();
+      return;
+    }
+    return;
+  }
+  const row=e.target.closest('[data-godir],[data-gofile]');
+  if(!row)return;
+  const kind=row.dataset.godir!==undefined?'d':'f';
+  const path=kind==='d'?row.dataset.godir:row.dataset.gofile;
+  /* Shift-click selects the range from the last toggled row; Ctrl/Cmd-click
+     toggles just this row; a plain click opens it. */
+  if(e.shiftKey){
+    e.preventDefault();
+    const rows=fvListingRows();
+    const a=S.fv.selAnchor?rows.findIndex(r=>(r.kind+':'+r.path)===S.fv.selAnchor):-1;
+    const b=rows.findIndex(r=>r.kind===kind&&r.path===path);
+    if(a>=0&&b>=0){
+      const lo=Math.min(a,b),hi=Math.max(a,b);
+      for(let i=lo;i<=hi;i++)fvToggleSel(rows[i].kind,rows[i].path,true);
+    }else{
+      fvToggleSel(kind,path,true);
+    }
+    S.fv.selAnchor=kind+':'+path;
+    fvSelRefreshUI();
+    return;
+  }
+  if(e.ctrlKey||e.metaKey){
+    fvToggleSel(kind,path);
+    S.fv.selAnchor=kind+':'+path;
+    fvSelRefreshUI();
+    return;
+  }
+  if(kind==='d')fvBrowse(path);else fvOpenFile(path);
+});
+/* selection wiring: every tick box (tree + listing) and the Select-all */
+$('#view-files').addEventListener('change',e=>{
+  const i=e.target;
+  if(!S.fv||!(i instanceof HTMLInputElement))return;
+  if(i.id==='fvSelAll'){
+    const on=i.checked;
+    fvListingRows().forEach(r=>fvToggleSel(r.kind,r.path,on));
+    S.fv.selAnchor=null;
+    fvSelRefreshUI();
+    announce(on?'Everything in this folder is selected.':'Selection cleared for this folder.');
+    return;
+  }
+  if(i.dataset.ck===undefined)return;
+  fvToggleSel(i.dataset.cktype,i.dataset.ck);
+  if(i.closest('#fvPaneBody'))S.fv.selAnchor=i.dataset.cktype+':'+i.dataset.ck;
+  fvSelRefreshUI();
+});
+$('#fvSelBar').addEventListener('click',e=>{
+  const b=e.target.closest('[data-selact]');if(!b||!S.fv)return;
+  if(b.dataset.selact==='clear'){
+    S.fv.sel.clear();S.fv.selAnchor=null;
+    if(S.fv.armed==='delsel')S.fv.armed=null;
+    fvSelRefreshUI();
+    announce('Selection cleared.');
+    return;
+  }
+  if(b.dataset.selact==='del'){
+    if(S.fv.armed!=='delsel'){S.fv.armed='delsel';renderFvSelBar();return;}
+    fvDeleteSelected($('#fvSelBar [data-selact="del"]'));
+  }
+});
+/* Delete/Backspace arm the same two-press delete; Escape clears the
+   selection. Typing in a field or the editor is never intercepted. */
+document.addEventListener('keydown',e=>{
+  if($('#shell').hidden||S.view!=='files'||!S.fv||!S.fv.sel)return;
+  const t=e.target;
+  if(t&&((t.tagName==='INPUT'&&t.type!=='checkbox')||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+  if(document.querySelector('dialog[open]'))return;
+  if(e.key==='Escape'&&S.fv.sel.size){
+    e.preventDefault();
+    S.fv.sel.clear();S.fv.selAnchor=null;
+    if(S.fv.armed==='delsel')S.fv.armed=null;
+    fvSelRefreshUI();
+    announce('Selection cleared.');
+    return;
+  }
+  if((e.key==='Delete'||e.key==='Backspace')&&S.fv.sel.size){
+    e.preventDefault();
+    if(S.fv.armed!=='delsel'){S.fv.armed='delsel';renderFvSelBar();}
+    else fvDeleteSelected($('#fvSelBar [data-selact="del"]'));
+  }
 });
 $('#fvNewFile').addEventListener('click',()=>{
   if(!S.fv||S.fv.loading||S.fv.error)return;
@@ -3211,7 +3592,9 @@ function renderAppsTab(){
     })).join('');
   const rows=sites.map(s=>S.editing===String(s.id)
     ?`<form class="srow-edit" data-id="${esc(String(s.id))}">
-        <label class="field"><span>Folder the file lands in</span><input name="dir" value="${esc(s.dir||'public/')}" required></label>
+        <label class="field"><span>Folder the file lands in</span>
+          <input name="dir" value="${esc(s.dir||'')}" placeholder="the top of the repository">
+          <small>Leave it empty to put files at the top of the repository.</small></label>
         <label class="field"><span>Branch</span><input name="branch" value="${esc(s.branch||'main')}" required></label>
         <span class="edit-actions">
           <button class="btn btn-primary btn-sm" type="submit">Save</button>

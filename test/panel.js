@@ -423,6 +423,35 @@ console.log("\n── the deploy screen warns BEFORE you open Files ──");
      "and reports php once it can build", JSON.stringify(st2.sites.map((x) => x.buildpack)));
 }
 
+console.log("\n── changing files must actually publish ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  const app = byName["site-one"].id;
+  h.calls.length = 0;
+  const r = await call(h, "POST", `/api/files/${app}`, { token: m, json: { files: [
+    { path: "index.html", contentB64: Buffer.from("<h1>edited</h1>").toString("base64") } ] } });
+  ok(r.status === 200, "the edit commits");
+  const builds = h.calls.filter((c) => c.url.includes("/builds") && c.method === "POST");
+  ok(builds.length === 1, "and the app is rebuilt, so the live site actually changes", String(builds.length));
+  ok(r.body.build && r.body.build.id, "the reply says a build started", JSON.stringify(r.body.build));
+
+  const logs = (await call(h, "GET", "/api/logs", { token: m })).body.entries;
+  ok(logs.some((l) => /rebuilt after a file change/.test(l.action)), "and it is recorded");
+}
+
+console.log("\n── adding a person must not overwrite one ──");
+{
+  const h = newEnv();
+  const { m } = await setup(h);
+  const dupe = await call(h, "POST", "/api/user", { token: m,
+    json: { username: "va1", password: "brandnewpass", role: "va" } });
+  ok(dupe.status === 409 && /already someone called/i.test(dupe.body.error),
+     "re-using a name is refused instead of silently resetting their password", dupe.body.error);
+  const still = await call(h, "POST", "/api/login", { json: { username: "va1", password: "vapassword1" } });
+  ok(still.status === 200, "and their original password still works");
+}
+
 console.log("\n── the Heroku buildpack trap ──");
 {
   const h = newEnv();

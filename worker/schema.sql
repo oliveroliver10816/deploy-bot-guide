@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS batch_targets (
   new_blob_sha  TEXT,
   build_id      TEXT,
   build_url     TEXT,
+  files_json    TEXT,                      -- every path this target wrote, for undo
   finished_at   TEXT,
   PRIMARY KEY (batch_id, repo_id)
 );

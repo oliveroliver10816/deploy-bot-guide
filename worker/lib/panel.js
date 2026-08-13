@@ -128,6 +128,10 @@ export async function ensurePanelSchema(env) {
   const acols = new Set((ainfo.results || []).map((c) => c.name));
   if (!acols.has("combo_id")) await env.DB.prepare(`ALTER TABLE apps ADD COLUMN combo_id INTEGER`).run();
   if (!acols.has("buildpack")) await env.DB.prepare(`ALTER TABLE apps ADD COLUMN buildpack TEXT`).run();
+  const tinfo = await env.DB.prepare(`PRAGMA table_info(batch_targets)`).all();
+  if (!(tinfo.results || []).some((c) => c.name === "files_json")) {
+    await env.DB.prepare(`ALTER TABLE batch_targets ADD COLUMN files_json TEXT`).run();
+  }
   const binfo = await env.DB.prepare(`PRAGMA table_info(batches)`).all();
   if (!(binfo.results || []).some((c) => c.name === "last_poll")) {
     await env.DB.prepare(`ALTER TABLE batches ADD COLUMN last_poll TEXT`).run();
@@ -166,7 +170,7 @@ async function appRow(env, repoId) {
  * repo contents go GitHub -> Heroku directly, and only fall back to pulling the
  * archive through this Worker if that fails (the signed link is short-lived).
  */
-async function deployOne(env, batchId, site, files, mode, who) {
+async function deployOne(env, batchId, site, files, mode, who, appId) {
   const setT = (fields, ...vals) =>
     q(env, `UPDATE batch_targets SET ${fields} WHERE batch_id=? AND repo_id=?`, ...vals, batchId, site.id).run();
 
@@ -200,10 +204,18 @@ async function deployOne(env, batchId, site, files, mode, who) {
       message: `${label} (panel, ${who})`, files: prepared,
     }, fetch);
 
-    await setT("path=?, commit_sha=?, prev_blob_sha=?, status='building'",
-      prepared.length === 1 ? first.path : `${prepared.length} files`, res.commitSha, prev);
+    // Record EVERY path, not a human label: undo used to treat the label
+    // "2 files" as a real path and commit a file with that name.
+    const paths = prepared.map((f) => f.path);
+    await setT("path=?, files_json=?, commit_sha=?, prev_blob_sha=?, status='building'",
+      prepared.length === 1 ? first.path : `${prepared.length} files`,
+      JSON.stringify(paths.map((pp, i) => ({ path: pp, prev: i === 0 ? prev : undefined }))),
+      res.commitSha, prev);
 
-    const app = await appRow(env, site.id);
+    const app = appId
+      ? await q(env, `SELECT a.*, c.token AS hk_token FROM apps a
+                      JOIN connections c ON c.id=a.connection_id WHERE a.id=?`, appId).first()
+      : await appRow(env, site.id);
     if (!app) {
       await setT("status='no_app', detail=?, finished_at=?", "Committed. No Heroku app linked.", nowIso());
       return;
@@ -234,11 +246,14 @@ async function startBuild(env, site, app, version) {
   return HK.deploy(app.hk_token, app.heroku_name, tar, version, fetch);
 }
 
-export async function runBatch(env, batchId, siteIds, files, fileName, mode, who) {
-  for (const id of siteIds) {
-    const site = await siteRow(env, id);
+export async function runBatch(env, batchId, siteIds, files, fileName, mode, who, appIds) {
+  for (let i = 0; i < siteIds.length; i++) {
+    const site = await siteRow(env, siteIds[i]);
     if (!site) continue;
-    await deployOne(env, batchId, site, files, mode, who);
+    // Build the app the user actually ticked. Looking it up from the repo
+    // returned whichever app was created first, so with two apps on one repo
+    // the wrong site got rebuilt and the ticked one was reported Live.
+    await deployOne(env, batchId, site, files, mode, who, appIds && appIds[i]);
   }
   const c = await q(env,
     `SELECT SUM(status='failed') AS failed, COUNT(*) AS n FROM batch_targets WHERE batch_id=?`, batchId).first();
@@ -630,6 +645,7 @@ export async function handlePanel(env, request, ctx, path) {
     // repo it deploys from; an app with no repo cannot receive a file, and says so.
     const targets = [];
     const repoIds = [];
+    const appIdsForRepos = [];
     for (const id of siteIds) {
       const app = await q(env,
         `SELECT a.id, a.label, a.heroku_name, a.repo_id FROM apps a WHERE a.id=?`, id).first();
@@ -651,6 +667,7 @@ export async function handlePanel(env, request, ctx, path) {
         continue;
       }
       repoIds.push(app.repo_id);
+      appIdsForRepos.push(app.id);
       await q(env, `INSERT INTO batch_targets (batch_id, repo_id, app_id, status) VALUES (?,?,?,'committing')`,
         batchId, app.repo_id, app.id).run();
       targets.push({ site_id: String(app.id), label: app.heroku_name, status: "committing" });
@@ -661,7 +678,7 @@ export async function handlePanel(env, request, ctx, path) {
       `${targets.length} app(s): ${targets.map((t) => t.label).join(", ")}`);
 
     // Answer immediately; the browser polls /api/batch/{id}.
-    ctx.waitUntil(runBatch(env, batchId, repoIds, files, fileName, mode, me.username));
+    ctx.waitUntil(runBatch(env, batchId, repoIds, files, fileName, mode, me.username, appIdsForRepos));
     return json(env, request, { batch: batchId, targets });
   }
 
@@ -952,7 +969,26 @@ export async function handlePanel(env, request, ctx, path) {
       await logAction(env, me.username, files.length ? "changed files" : "deleted files",
         app.heroku_name, `${res.changed} written, ${res.removed} removed`);
       const bp = await recordBuildpack(env, app.id, repo);
-      return json(env, request, { ok: true, ...res, buildpack: bp });
+
+      // Committing is not publishing. Everything done here used to stop at the
+      // repository, so the live site kept serving the old build while the panel
+      // said "Saved". Rebuild the app the same way a deploy does.
+      let build = null;
+      if (b.publish !== false) {
+        const full = await q(env,
+          `SELECT a.*, c.token AS hk_token FROM apps a JOIN connections c ON c.id=a.connection_id WHERE a.id=?`,
+          app.id).first();
+        if (full) {
+          try {
+            const bd = await startBuild(env, repo, full, res.commitSha);
+            build = { id: bd.id, status: bd.status };
+            await logAction(env, me.username, "rebuilt after a file change", app.heroku_name, null);
+          } catch (e) {
+            build = { error: String(e.message || e).slice(0, 200) };
+          }
+        }
+      }
+      return json(env, request, { ok: true, ...res, buildpack: bp, build });
     }
   }
 
@@ -1029,6 +1065,11 @@ export async function handlePanel(env, request, ctx, path) {
       const p = String(b.password || "");
       if (u.length < 3 || p.length < 8) return err(env, request, "Username needs 3+ characters and password 8+.");
       const role = (b.role === "master" || b.role === "owner") ? "master" : "va";
+      const clash = await q(env, `SELECT username FROM panel_users WHERE username=?`, u).first();
+      if (clash) {
+        return err(env, request,
+          `There is already someone called ${u}. Pick another name — adding again would reset their password.`, 409);
+      }
       await createUser(env, u, p, role);
       await logAction(env, me.username, "added a person", u, role === "master" ? "owner" : "VA");
       return json(env, request, { ok: true });
@@ -1063,6 +1104,16 @@ export async function handlePanel(env, request, ctx, path) {
 
 async function undoBatch(env, batchId, oldTargets, who) {
   for (const t of oldTargets) {
+    // Multi-file updates cannot be reversed file-by-file from a single
+    // prev_blob_sha, so they are refused rather than corrupting the repository.
+    let recorded = null;
+    try { recorded = t.files_json ? JSON.parse(t.files_json) : null; } catch { recorded = null; }
+    if (recorded && recorded.length > 1) {
+      await q(env, `UPDATE batch_targets SET status='skipped', detail=?, finished_at=? WHERE batch_id=? AND repo_id=?`,
+        `This update carried ${recorded.length} files. Undo restores one file at a time — open Files and put back the ones you need.`,
+        nowIso(), batchId, t.repo_id).run();
+      continue;
+    }
     const site = await siteRow(env, t.repo_id);
     const setT = (fields, ...vals) =>
       q(env, `UPDATE batch_targets SET ${fields} WHERE batch_id=? AND repo_id=?`, ...vals, batchId, t.repo_id).run();
