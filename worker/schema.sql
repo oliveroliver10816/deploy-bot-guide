@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS apps (
   web_url       TEXT,
   created_at    TEXT NOT NULL,
   combo_id      INTEGER,                  -- which GitHub+Heroku pair it came from
+  buildpack     TEXT,                     -- what Heroku will detect; NULL = nothing, so it cannot build
   UNIQUE (connection_id, heroku_name)
 );
 

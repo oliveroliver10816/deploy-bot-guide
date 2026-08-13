@@ -900,6 +900,7 @@ button.site-card{font:inherit;text-align:left;width:100%}
           <button type="button" class="btn btn-secondary btn-sm" id="fvNewFolder"><svg class="ic ic-s" aria-hidden="true"><use href="#i-folderplus"/></svg>New folder</button>
           <button type="button" class="btn btn-secondary btn-sm" id="fvUpFiles"><svg class="ic ic-s" aria-hidden="true"><use href="#i-upload"/></svg>Upload files</button>
           <button type="button" class="btn btn-secondary btn-sm" id="fvUpFolder"><svg class="ic ic-s" aria-hidden="true"><use href="#i-upload"/></svg>Upload folder</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="fvChangeApp" title="Open a different app's files"><svg class="ic ic-s" aria-hidden="true"><use href="#i-folder"/></svg>Change app</button>
         </div>
       </header>
       <div id="fvBanner"></div>
@@ -1195,6 +1196,7 @@ const S={
   batch:null, pollT:null,
   view:'deploy', kb:'send', tab:'accounts',
   repos:null,
+  edOff:!!sessionStorage.getItem('dp_edoff'),
   editing:null, armed:null, undoAsk:null, undoneRecent:new Set(),
   fv:null, bp:{}
 };
@@ -1231,8 +1233,8 @@ const MOCK_API=(()=>{
   const db={
     me:null,
     sites:[
-      {id:'101',label:'northgate-supply',url:H('northgate-supply'),app:'northgate-supply',app_url:H('northgate-supply'),owner:'northgate-ops',repo:'northgate-site',branch:'main',dir:'public/',linked:true,account:'h1'},
-      {id:'102',label:'brightleaf-web',url:H('brightleaf-web'),app:'brightleaf-web',app_url:H('brightleaf-web'),owner:'northgate-ops',repo:'brightleaf-web',branch:'main',dir:'public/',linked:true,account:'h1'},
+      {id:'101',label:'northgate-supply',url:H('northgate-supply'),app:'northgate-supply',app_url:H('northgate-supply'),owner:'northgate-ops',repo:'northgate-site',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:null},
+      {id:'102',label:'brightleaf-web',url:H('brightleaf-web'),app:'brightleaf-web',app_url:H('brightleaf-web'),owner:'northgate-ops',repo:'brightleaf-web',branch:'main',dir:'public/',linked:true,account:'h1',buildpack:'php'},
       {id:'103',label:'harbourpoint-demo',url:H('harbourpoint-demo'),app:'harbourpoint-demo',app_url:H('harbourpoint-demo'),owner:null,repo:null,branch:null,dir:'public/',linked:false,account:'h1'},
       {id:'104',label:'clearwater-labs',url:H('clearwater-labs'),app:'clearwater-labs',app_url:H('clearwater-labs'),owner:'northgate-ops',repo:'clearwater-labs',branch:'main',dir:'public/',linked:true,account:'h1'},
       {id:'105',label:'summit-tools',url:H('summit-tools'),app:'summit-tools',app_url:H('summit-tools'),owner:'northgate-ops',repo:'summit-tools',branch:'main',dir:'dist/',linked:true,account:'h1'},
@@ -2020,6 +2022,44 @@ function bufToB64(buf){
   return btoa(s);
 }
 function fvDirty(){return!!(S.fv&&S.fv.dirty);}
+/* Any re-render remounts the editor from S.fv.fileData. Without lifting the
+   textarea back first, Rename / Upload / New file / New folder / Make-it-
+   deployable silently threw away whatever had been typed AND left dirty=true,
+   so the panel then warned about changes that no longer existed and Save would
+   have written the stale copy. */
+function fvSyncEditor(){
+  if(!S.fv||S.fv.open==null||!S.fv.fileData)return;
+  const ta=document.querySelector('#edTa');
+  if(!ta)return;
+  try{
+    const b64=b64encode(ta.value);
+    if(b64!==S.fv.fileData.contentB64){
+      S.fv.fileData={...S.fv.fileData,contentB64:b64,
+        size:new TextEncoder().encode(ta.value).length};
+      S.fv.dirty=true;
+    }
+  }catch(e){}
+}
+
+/* Without this the picker was reachable only once per session: S.fv is set by
+   openFiles and was cleared only on sign-out, so the rail's Files entry always
+   reopened the same repository with no way to choose another. */
+/* "IF EDITOR WILL MAKE THE PANEL SLOW, THEN WE DON'T NEED IT" — so highlighting
+   is a switch, remembered for the session. */
+function fvToggleHighlight(){
+  fvSyncEditor();
+  S.edOff=!S.edOff;
+  try{ sessionStorage.setItem('dp_edoff',S.edOff?'1':''); }catch(e){}
+  renderFilePane();
+  toast(S.edOff?'Colouring off — the editor is plain text now.':'Colouring on.','ok');
+}
+
+function fvChangeApp(){
+  if(!fvGuard())return;
+  S.fv=null;
+  renderFiles();
+}
+
 function fvGuard(){return!fvDirty()||window.confirm('You have unsaved changes in the editor. Leave without saving?');}
 
 function openFiles(appId){
@@ -2030,6 +2070,7 @@ function openFiles(appId){
 }
 
 function renderFiles(){
+  fvSyncEditor();
   const tools=$('#fvTools'),grid=$('#fvGrid'),pick=$('#fvPick'),banner=$('#fvBanner');
   if(!S.fv){ /* no app open yet — offer the linked apps */
     tools.hidden=true;grid.hidden=true;banner.innerHTML='';
@@ -2210,6 +2251,7 @@ function renderFilePane(){
     <div class="fv-pane-actions">
       <span class="p-dim" id="fvSize">${d?fmtBytes(d.size):''}</span>
       ${!isBin&&d?`<button type="button" class="btn btn-primary btn-sm" data-fv="save" id="fvSave" ${S.fv.dirty?'':'disabled'}>${ic('save','ic ic-s')}Save</button>`:''}
+      ${!isBin&&d?`<button type="button" class="btn btn-ghost btn-sm" data-fv="hl" title="Turn the colouring on or off — off is fastest on large files">${S.edOff?'Colour on':'Colour off'}</button>`:''}
       ${d?`<button type="button" class="btn btn-ghost btn-sm" data-fv="rename">${ic('edit','ic ic-s')}Rename</button>`:''}
       <button type="button" class="btn btn-danger btn-sm" data-fv="delfile">${ic('trash','ic ic-s')}${S.fv.armed==='delfile'?'Press again to delete':'Delete'}</button>
     </div>`;
@@ -2224,7 +2266,7 @@ function renderFilePane(){
   let text;
   try{text=b64decode(clean);}
   catch(e2){body.innerHTML='<p class="fv-note">This file could not be read as text.</p>';return;}
-  const plain=d.size>300*1024||/[^\n]{3000,}/.test(text);
+  const plain=S.edOff||d.size>120*1024||/[^\n]{3000,}/.test(text);  /* 120 KB: a 299 KB file blocked the main thread ~429 ms per keystroke pause */
   mountEditor(body,text,ex,plain);
 }
 
@@ -2298,7 +2340,7 @@ function mountEditor(body,text,ext,plain){
   };
   ta.addEventListener('input',()=>{
     if(!S.fv.dirty){S.fv.dirty=true;const sb=$('#fvSave');if(sb)sb.disabled=false;}
-    clearTimeout(t);t=setTimeout(paint,120);
+    clearTimeout(t);t=setTimeout(paint,250);
   });
   ta.addEventListener('scroll',sync);
   ta.addEventListener('keydown',e=>{
@@ -2451,6 +2493,7 @@ $('#fvPaneHead').addEventListener('click',e=>{
   if(c){fvBrowse(c.dataset.crumb);return;}
   const b=e.target.closest('[data-fv]');if(!b)return;
   const act=b.dataset.fv;
+  if(act==='hl'){fvToggleHighlight();return;}
   if(act==='save'){fvSaveOpen();return;}
   if(act==='rename'){
     const old=S.fv.open,dir=parentOf(old);
@@ -2459,6 +2502,7 @@ $('#fvPaneHead').addEventListener('click',e=>{
       const np=(dir?dir+'/':'')+name;
       if(np===old)return;
       if(S.fv.entries.some(en=>en.type==='blob'&&en.path===np))throw new Error('A file with that name already exists.');
+      fvSyncEditor();  /* commit what is on screen, not the copy fetched earlier */
       const content=String((S.fv.fileData&&S.fv.fileData.contentB64)||'').replace(/\s+/g,'');
       await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{
         message:'Rename '+old.split('/').pop()+' to '+name,
@@ -2537,6 +2581,7 @@ $('#fvNewFolder').addEventListener('click',()=>{
 });
 $('#fvUpFiles').addEventListener('click',()=>{if(S.fv&&!S.fv.loading&&!S.fv.error)$('#fvFileInput').click();});
 $('#fvUpFolder').addEventListener('click',()=>{if(S.fv&&!S.fv.loading&&!S.fv.error)$('#fvDirInput').click();});
+$('#fvChangeApp').addEventListener('click',fvChangeApp);
 $('#fvFileInput').addEventListener('change',e=>{fvUpload(e.target.files,false);e.target.value='';});
 $('#fvDirInput').addEventListener('change',e=>{fvUpload(e.target.files,true);e.target.value='';});
 

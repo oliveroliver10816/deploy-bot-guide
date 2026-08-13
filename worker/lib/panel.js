@@ -125,9 +125,9 @@ export async function ensurePanelSchema(env) {
   if (!have.has("url")) await env.DB.prepare(`ALTER TABLE repos ADD COLUMN url TEXT`).run();
   if (!have.has("dir")) await env.DB.prepare(`ALTER TABLE repos ADD COLUMN dir TEXT DEFAULT ''`).run();
   const ainfo = await env.DB.prepare(`PRAGMA table_info(apps)`).all();
-  if (!(ainfo.results || []).some((c) => c.name === "combo_id")) {
-    await env.DB.prepare(`ALTER TABLE apps ADD COLUMN combo_id INTEGER`).run();
-  }
+  const acols = new Set((ainfo.results || []).map((c) => c.name));
+  if (!acols.has("combo_id")) await env.DB.prepare(`ALTER TABLE apps ADD COLUMN combo_id INTEGER`).run();
+  if (!acols.has("buildpack")) await env.DB.prepare(`ALTER TABLE apps ADD COLUMN buildpack TEXT`).run();
   const binfo = await env.DB.prepare(`PRAGMA table_info(batches)`).all();
   if (!(binfo.results || []).some((c) => c.name === "last_poll")) {
     await env.DB.prepare(`ALTER TABLE batches ADD COLUMN last_poll TEXT`).run();
@@ -348,9 +348,28 @@ export async function refreshCombos(env, actor) {
       if (match) summary.linked++;
     }
   }
+  // Detect the buildpack for every linked app, so the deploy screen can warn
+  // about "No default language could be detected" BEFORE he tries to deploy.
+  const linkedApps = (await q(env,
+    `SELECT id, repo_id FROM apps WHERE repo_id IS NOT NULL LIMIT 40`).all()).results || [];
+  for (const la of linkedApps) {
+    const repo = await siteRow(env, la.repo_id);
+    if (repo) await recordBuildpack(env, la.id, repo);
+  }
+
   await logAction(env, actor, "refreshed accounts", null,
     `${summary.apps} app(s), ${summary.repos} repo(s), ${summary.linked} auto-linked`);
   return summary;
+}
+
+/** Remember what Heroku will detect, so the deploy screen can warn up front. */
+async function recordBuildpack(env, appId, repo) {
+  try {
+    const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
+    const bp = GH.buildpackFor(t.entries.filter((e) => e.type === "blob").map((e) => e.path));
+    await q(env, `UPDATE apps SET buildpack=? WHERE id=?`, bp, appId).run();
+    return bp;
+  } catch { return undefined; }
 }
 
 /** Match a Heroku app to a repo on the same account by name, loosely. */
@@ -439,7 +458,7 @@ export async function handlePanel(env, request, ctx, path) {
     // sequential query was costing a full network hop on every screen paint.
     const [appsR, connsR, combosR, recentR, usersR] = await env.DB.batch([
       env.DB.prepare(
-        `SELECT a.id, a.label, a.heroku_name, a.web_url, a.repo_id, a.combo_id,
+        `SELECT a.id, a.label, a.heroku_name, a.web_url, a.repo_id, a.combo_id, a.buildpack,
                 r.owner AS owner, r.name AS repo, r.branch AS branch, COALESCE(r.dir,'') AS dir,
                 hc.account AS heroku_account
          FROM apps a
@@ -483,6 +502,8 @@ export async function handlePanel(env, request, ctx, path) {
       branch: a.branch || "main",
       dir: a.dir || "",
       linked: !!a.repo_id,
+      // null = Heroku will not be able to build it; undefined = not checked yet
+      buildpack: a.repo_id ? (a.buildpack === undefined ? null : a.buildpack) : undefined,
       account: a.heroku_account || "",
     }));
 
@@ -779,6 +800,8 @@ export async function handlePanel(env, request, ctx, path) {
         const r = await q(env, `SELECT id, name FROM repos WHERE id=?`, repoId).first();
         if (!r) return err(env, request, "That repository is not in the list.");
         await q(env, `UPDATE apps SET repo_id=? WHERE id=?`, repoId, app.id).run();
+        const linkedRepo = await siteRow(env, repoId);
+        if (linkedRepo) await recordBuildpack(env, app.id, linkedRepo);
         await logAction(env, me.username, "linked an app", app.heroku_name, `to ${r.name}`);
       } else {
         await q(env, `UPDATE apps SET repo_id=NULL WHERE id=?`, app.id).run();
@@ -877,7 +900,8 @@ export async function handlePanel(env, request, ctx, path) {
       }, fetch);
       await logAction(env, me.username, files.length ? "changed files" : "deleted files",
         app.heroku_name, `${res.changed} written, ${res.removed} removed`);
-      return json(env, request, { ok: true, ...res });
+      const bp = await recordBuildpack(env, app.id, repo);
+      return json(env, request, { ok: true, ...res, buildpack: bp });
     }
   }
 
@@ -906,7 +930,7 @@ export async function handlePanel(env, request, ctx, path) {
     const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
     const paths = t.entries.filter((e) => e.type === "blob").map((e) => e.path);
     const found = GH.buildpackFor(paths);
-    if (found) return json(env, request, { ok: true, already: found });
+    if (found) { await recordBuildpack(env, app.id, repo); return json(env, request, { ok: true, already: found }); }
     if (!paths.includes("index.html")) {
       return err(env, request, "There is no index.html at the top of this repository, so there is nothing to serve.");
     }
@@ -917,6 +941,7 @@ export async function handlePanel(env, request, ctx, path) {
       files: [{ path: "index.php", contentB64: toBase64(new TextEncoder().encode(php)) }],
     }, fetch);
     await logAction(env, me.username, "made a site deployable", app.heroku_name, "added index.php");
+    await recordBuildpack(env, app.id, repo);
     return json(env, request, { ok: true, added: "index.php" });
   }
 

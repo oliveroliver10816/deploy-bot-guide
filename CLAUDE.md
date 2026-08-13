@@ -364,3 +364,31 @@ would roughly halve it. Still unanswered — ask before moving.
 
 **Tests:** node **122 panel + 69 bot**; browser `wide.py`, `v2.py`, `v3.py`, `shots.py`.
 **Shipped as `deploy-panel-v4.zip`** (release `panel-v4`); `panel/VERSION` bumped to 5.
+
+
+## v5 (2026-08-13) — four defects the adversarial review caught in v4
+
+v4 shipped before its review agent finished. The review then failed 4 checks, all real:
+
+- 🛑 **DATA LOSS.** Unsaved editor text was silently discarded by Rename / Upload / New file /
+  New folder / Make-it-deployable, because `renderFilePane` remounts from the last *fetched* copy
+  and never read `#edTa.value` back — and `dirty` stayed true afterwards, so the panel warned about
+  changes that no longer existed and Save would have written the stale copy. Fixed with
+  `fvSyncEditor()`, called at the top of `renderFiles()` and before Rename commits.
+- ⭐ **The Deploy-card buildpack warning never fired on a fresh sign-in** — `S.bp` was only filled by
+  `fvLoadTree`, so an app whose Files view had never been opened showed nothing. That is exactly the
+  path Bob took. Fixed properly at the source: `apps.buildpack` is cached in D1, filled during
+  `refreshCombos`, on link, after any file write and after makedeployable, and **returned by
+  `/api/state`**. Test asserts a linked app reports `buildpack:null` straight after connecting keys.
+- **The app picker was reachable only once per session** (`S.fv` cleared only on sign-out). Added a
+  **Change app** control.
+- **Editor speed on his own 86 KB file:** 320 ms to open, 24,576 spans, 161 ms hitch per pause.
+  Plain-text guard 300 KB → **120 KB**, debounce 120 ms → **250 ms**, plus a **Colour off** switch
+  (his own words: *"IF EDITOR WILL MAKE THE PANEL SLOW, THEN WE DON'T NEED IT"*).
+
+⚠️ **Lesson: do not publish before the review agent returns.** The build was correct, tested and
+live-verified — and still had a data-loss bug that only an adversarial pass found. `test/browser/v5.py`
+now reproduces each of the four.
+
+**Tests:** node **126 panel + 69 bot**; browser `wide.py`, `v3.py`, `v4check`, `v5.py`.
+**Shipped `deploy-panel-v5.zip`** (release `panel-v5`); `panel/VERSION` → 6.

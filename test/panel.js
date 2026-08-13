@@ -326,6 +326,29 @@ console.log("\n── repository files ──");
   ok(nolink.status === 400 && /Link a repository/i.test(nolink.body.error), "an app with no repo explains itself");
 }
 
+console.log("\n── the deploy screen warns BEFORE you open Files ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  // straight after connecting keys, with nothing else touched
+  const st = (await call(h, "GET", "/api/state", { token: m })).body;
+  const linked = st.sites.filter((x) => x.linked);
+  ok(linked.length >= 1, "there is a linked app to judge", String(linked.length));
+  ok(linked.every((x) => x.buildpack === null),
+     "a linked app reports buildpack null on the DEPLOY screen, without opening Files first",
+     JSON.stringify(linked.map((x) => [x.label, x.buildpack])));
+  const unlinked = st.sites.filter((x) => !x.linked);
+  ok(unlinked.every((x) => x.buildpack === undefined),
+     "an app with no repo is not judged at all", JSON.stringify(unlinked.map((x) => x.buildpack)));
+
+  // once it can build, the deploy screen stops warning
+  h.state.gitTree = [{ path: "index.php", type: "blob", size: 36, sha: "x" }];
+  await call(h, "POST", "/api/refresh", { token: m, json: {} });
+  const st2 = (await call(h, "GET", "/api/state", { token: m })).body;
+  ok(st2.sites.filter((x) => x.linked).every((x) => x.buildpack === "php"),
+     "and reports php once it can build", JSON.stringify(st2.sites.map((x) => x.buildpack)));
+}
+
 console.log("\n── the Heroku buildpack trap ──");
 {
   const h = newEnv();
