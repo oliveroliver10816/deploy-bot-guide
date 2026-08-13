@@ -202,7 +202,12 @@ async function deployOne(env, batchId, site, bytes, fileName, mode, who) {
 }
 
 async function startBuild(env, site, app, version) {
-  const url = await GH.tarballUrl(site.gh_token, site.owner, site.name, site.branch, fetch);
+  // Pin the archive to the COMMIT we just made, never to the branch. GitHub
+  // caches branch archives, so a branch tarball fetched immediately after a push
+  // can still be the previous snapshot — which silently deploys the old files
+  // and looks like the panel did nothing. A per-commit archive cannot be stale.
+  const ref = version || site.branch;
+  const url = await GH.tarballUrl(site.gh_token, site.owner, site.name, ref, fetch);
   if (url) {
     try {
       return await HK.createBuild(app.hk_token, app.heroku_name, url, version, fetch);
@@ -210,7 +215,7 @@ async function startBuild(env, site, app, version) {
       /* signed link may have expired or been refused; fall through to upload */
     }
   }
-  const tar = await GH.tarball(site.gh_token, site.owner, site.name, site.branch, 40 * 1024 * 1024, fetch);
+  const tar = await GH.tarball(site.gh_token, site.owner, site.name, ref, 40 * 1024 * 1024, fetch);
   return HK.deploy(app.hk_token, app.heroku_name, tar, version, fetch);
 }
 
@@ -371,6 +376,7 @@ export async function handlePanel(env, request, ctx, path) {
     return new Response(null, { status: 204, headers: corsHeaders(env, request) });
   }
 
+  const url = new URL(request.url);
   const seg = path.split("/").filter(Boolean); // ["api", ...]
   const route = seg[1] || "";
   const body = async () => {
@@ -429,15 +435,43 @@ export async function handlePanel(env, request, ctx, path) {
     // Deploy targets are the Heroku APPS themselves, discovered from his
     // account — not hand-registered domains. Each carries the repo it deploys
     // from, or a flag saying it still needs one.
-    const rawApps = (await q(env,
-      `SELECT a.id, a.label, a.heroku_name, a.web_url, a.repo_id, a.combo_id,
-              r.owner AS owner, r.name AS repo, r.branch AS branch, COALESCE(r.dir,'') AS dir,
-              hc.account AS heroku_account
-       FROM apps a
-       LEFT JOIN repos r ON r.id = a.repo_id
-       LEFT JOIN connections hc ON hc.id = a.connection_id
-       ORDER BY a.label`).all()).results || [];
+    // ONE round trip, not five. The database is in another region, so each
+    // sequential query was costing a full network hop on every screen paint.
+    const [appsR, connsR, combosR, recentR, usersR] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT a.id, a.label, a.heroku_name, a.web_url, a.repo_id, a.combo_id,
+                r.owner AS owner, r.name AS repo, r.branch AS branch, COALESCE(r.dir,'') AS dir,
+                hc.account AS heroku_account
+         FROM apps a
+         LEFT JOIN repos r ON r.id = a.repo_id
+         LEFT JOIN connections hc ON hc.id = a.connection_id
+         ORDER BY a.label`),
+      env.DB.prepare(`SELECT id, kind, account FROM connections ORDER BY kind`),
+      env.DB.prepare(
+        `SELECT c.id, c.label, g.account AS github, h.account AS heroku,
+                c.github_conn_id, c.heroku_conn_id,
+                (SELECT COUNT(*) FROM apps a WHERE a.combo_id = c.id) AS apps
+         FROM combos c
+         JOIN connections g ON g.id = c.github_conn_id
+         JOIN connections h ON h.id = c.heroku_conn_id
+         ORDER BY c.id`),
+      env.DB.prepare(
+        // `where` names the apps the file actually went to. Without it the
+        // activity list showed only a batch id, which reads as gibberish.
+        `SELECT b.id, b.created_at AS at, b.who, b.file_name AS file,
+                (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id) AS sites,
+                (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id AND t.status IN ('live','no_app')) AS ok,
+                (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id AND t.status='failed') AS failed,
+                (SELECT group_concat(COALESCE(a.heroku_name, r2.label), ', ')
+                   FROM batch_targets t
+                   LEFT JOIN apps  a  ON a.id  = t.app_id
+                   LEFT JOIN repos r2 ON r2.id = t.repo_id
+                  WHERE t.batch_id = b.id) AS targets
+         FROM batches b ORDER BY b.created_at DESC LIMIT 15`),
+      env.DB.prepare(`SELECT username, role FROM panel_users ORDER BY role, username`),
+    ]);
 
+    const rawApps = appsR.results || [];
     const sites = rawApps.map((a) => ({
       id: String(a.id),
       label: a.heroku_name,
@@ -453,30 +487,15 @@ export async function handlePanel(env, request, ctx, path) {
     }));
 
     const accounts = { github: [], heroku: [] };
-    for (const c of (await q(env, `SELECT id, kind, account FROM connections ORDER BY kind`).all()).results || []) {
+    for (const c of connsR.results || []) {
       const entry = { id: c.id, account: c.account };
       if (c.kind === "github") entry.login = c.account; else entry.email = c.account;
       accounts[c.kind]?.push(entry);
     }
 
-    const combos = (await q(env,
-      `SELECT c.id, c.label, g.account AS github, h.account AS heroku,
-              c.github_conn_id, c.heroku_conn_id,
-              (SELECT COUNT(*) FROM apps a WHERE a.combo_id = c.id) AS apps
-       FROM combos c
-       JOIN connections g ON g.id = c.github_conn_id
-       JOIN connections h ON h.id = c.heroku_conn_id
-       ORDER BY c.id`).all()).results || [];
-
-    const recent = (await q(env,
-      `SELECT b.id, b.created_at AS at, b.who, b.file_name AS file,
-              (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id) AS sites,
-              (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id AND t.status IN ('live','no_app')) AS ok,
-              (SELECT COUNT(*) FROM batch_targets t WHERE t.batch_id=b.id AND t.status='failed') AS failed
-       FROM batches b ORDER BY b.created_at DESC LIMIT 15`).all()).results || [];
-
-    const users = ((await q(env, `SELECT username, role FROM panel_users ORDER BY role, username`).all()).results || [])
-      .map((u) => ({ username: u.username, role: outRole(u.role) }));
+    const combos = combosR.results || [];
+    const recent = recentR.results || [];
+    const users = (usersR.results || []).map((u) => ({ username: u.username, role: outRole(u.role) }));
 
     const unlinked = sites.filter((x) => !x.linked).length;
     return json(env, request, {
@@ -789,6 +808,116 @@ export async function handlePanel(env, request, ctx, path) {
       String(herokuName), String(herokuName), conn.id, siteId, web, nowIso()).run();
     await logAction(env, me.username, "linked an app", herokuName, `site #${siteId}`);
     return json(env, request, { ok: true, linked: herokuName });
+  }
+
+  // ---- files inside an app's repository -----------------------------------
+  // Everything here works on the APP id, because that is what the panel shows.
+  if (route === "files") {
+    const appId = Number(seg[2] || (await body()).app_id || url.searchParams.get("app"));
+    const app = await q(env,
+      `SELECT a.id, a.heroku_name, a.repo_id FROM apps a WHERE a.id=?`, appId).first();
+    if (!app) return err(env, request, "That app is not in the list.");
+    if (!app.repo_id) return err(env, request, "Link a repository to this app first.");
+    const repo = await siteRow(env, app.repo_id);
+
+    // GET  /api/files/{appId}            -> whole tree + which buildpack Heroku will find
+    if (request.method === "GET") {
+      const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
+      const paths = t.entries.filter((e) => e.type === "blob").map((e) => e.path);
+      return json(env, request, {
+        app: app.heroku_name,
+        repo: `${repo.owner}/${repo.name}`,
+        branch: repo.branch,
+        truncated: t.truncated,
+        entries: t.entries,
+        buildpack: GH.buildpackFor(paths),
+      });
+    }
+
+    // POST /api/files/{appId}  {message, files:[{path,contentB64}], remove:[path|folder]}
+    if (request.method === "POST") {
+      const b = await body();
+      const files = Array.isArray(b.files) ? b.files : [];
+      let remove = Array.isArray(b.remove) ? b.remove : [];
+
+      for (const fl of files) {
+        const clean = String(fl.path || "").replace(/^\/+/, "");
+        if (!clean || clean.split("/").some((x) => x === ".." || x === "")) {
+          return err(env, request, `Invalid path: ${fl.path}`);
+        }
+        fl.path = clean;
+      }
+
+      // A folder is not a thing in git — expand it to every file beneath it.
+      if (remove.length) {
+        const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
+        const blobs = t.entries.filter((e) => e.type === "blob").map((e) => e.path);
+        const expanded = new Set();
+        for (const raw of remove) {
+          const path = String(raw).replace(/^\/+|\/+$/g, "");
+          if (!path) continue;
+          if (blobs.includes(path)) expanded.add(path);
+          for (const bp of blobs) if (bp.startsWith(path + "/")) expanded.add(bp);
+        }
+        remove = [...expanded];
+        if (!remove.length && !files.length) return err(env, request, "Nothing there to remove.");
+      }
+
+      const total = files.reduce((n, fl) => n + (fl.contentB64 || "").length, 0);
+      if (total > 30 * 1024 * 1024) return err(env, request, "That is more than 30 MB in one go. Send it in smaller batches.");
+
+      const msg = String(b.message || "").trim() ||
+        (files.length && remove.length ? `Update ${files.length} file(s), remove ${remove.length}`
+          : files.length ? (files.length === 1 ? `Update ${files[0].path}` : `Add ${files.length} files`)
+          : `Remove ${remove.length} file(s)`);
+
+      const res = await GH.commitChanges(repo.gh_token, {
+        owner: repo.owner, repo: repo.name, branch: repo.branch,
+        message: `${msg} (panel, ${me.username})`, files, remove,
+      }, fetch);
+      await logAction(env, me.username, files.length ? "changed files" : "deleted files",
+        app.heroku_name, `${res.changed} written, ${res.removed} removed`);
+      return json(env, request, { ok: true, ...res });
+    }
+  }
+
+  // ---- one file's contents ------------------------------------------------
+  if (route === "file" && request.method === "GET") {
+    const appId = Number(url.searchParams.get("app"));
+    const path = url.searchParams.get("path") || "";
+    const app = await q(env, `SELECT repo_id FROM apps WHERE id=?`, appId).first();
+    if (!app?.repo_id) return err(env, request, "That app has no repository linked.");
+    const repo = await siteRow(env, app.repo_id);
+    try {
+      const r = await GH.readFile(repo.gh_token, repo.owner, repo.name, repo.branch, path, fetch);
+      return json(env, request, r);
+    } catch (e) { return err(env, request, String(e.message || e)); }
+  }
+
+  // ---- make a static site deployable --------------------------------------
+  // Heroku detects PHP on composer.json OR index.php (verified against the
+  // buildpack's own detect script). A repo of plain .html files matches nothing,
+  // which is the "No default language could be detected" failure.
+  if (route === "makedeployable" && request.method === "POST") {
+    const b = await body();
+    const app = await q(env, `SELECT id, heroku_name, repo_id FROM apps WHERE id=?`, Number(b.app_id)).first();
+    if (!app?.repo_id) return err(env, request, "That app has no repository linked.");
+    const repo = await siteRow(env, app.repo_id);
+    const t = await GH.treeOf(repo.gh_token, repo.owner, repo.name, repo.branch, fetch);
+    const paths = t.entries.filter((e) => e.type === "blob").map((e) => e.path);
+    const found = GH.buildpackFor(paths);
+    if (found) return json(env, request, { ok: true, already: found });
+    if (!paths.includes("index.html")) {
+      return err(env, request, "There is no index.html at the top of this repository, so there is nothing to serve.");
+    }
+    const php = '<?php include_once("index.html"); ?>';
+    await GH.commitChanges(repo.gh_token, {
+      owner: repo.owner, repo: repo.name, branch: repo.branch,
+      message: `Add index.php so Heroku can serve this site (panel, ${me.username})`,
+      files: [{ path: "index.php", contentB64: toBase64(new TextEncoder().encode(php)) }],
+    }, fetch);
+    await logAction(env, me.username, "made a site deployable", app.heroku_name, "added index.php");
+    return json(env, request, { ok: true, added: "index.php" });
   }
 
   // ---- repositories available to link ------------------------------------

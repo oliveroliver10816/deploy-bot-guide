@@ -38,15 +38,50 @@ s = re.sub(r'(const\s+MOCK\s*=\s*)(?:true|false)', r'\1false', s, count=1)
 if s == before:
     sys.exit("could not rewrite BASE / MOCK — check the markup")
 
-# 2. swap knowledge-base screenshot placeholders for embedded images
+# 2. Knowledge-base screenshots go in a SEPARATE file, fetched only when the
+#    knowledge base is first opened. Inlined as data URIs they were ~190 KB of
+#    the page and were parsed on every single load, including sign-in.
 shots = json.load(open(shots_path)) if os.path.exists(shots_path) else {}
 # NB: [-] is inside the class, so a greedy match swallows the closing "--".
 wanted = re.findall(r'<!--KB_SCREENSHOT:(.+?)-->', s)
 missing = [w for w in wanted if w not in shots]
 for name in set(wanted):
-    tag = (f'<img class="kbshot" loading="lazy" alt="Screenshot: {name}" src="{shots[name]}">'
+    tag = (f'<img class="kbshot" loading="lazy" alt="Screenshot: {name}" data-shot="{name}">'
            if name in shots else '')
     s = s.replace(f'<!--KB_SCREENSHOT:{name}-->', tag)
+
+LOADER = """
+<script>
+/* Knowledge-base screenshots load on demand: they cannot appear before a click,
+   so nothing is fetched during sign-in or on the deploy screen. */
+(function(){
+  var started=false, shots=null;
+  function apply(){
+    if(!shots) return;
+    var imgs=document.querySelectorAll('img[data-shot]:not([data-shot-done])');
+    for(var i=0;i<imgs.length;i++){
+      var d=shots[imgs[i].getAttribute('data-shot')];
+      if(d){ imgs[i].src=d; imgs[i].setAttribute('data-shot-done','1'); }
+    }
+  }
+  function need(){ return !!document.querySelector('img[data-shot]:not([data-shot-done])'); }
+  function fill(){
+    if(!need()) return;
+    if(shots){ apply(); return; }
+    if(started) return;
+    started=true;
+    var sc=document.createElement('script');
+    sc.src='kb-shots.js';
+    sc.onload=function(){ shots=window.KB_SHOTS||{}; apply(); };
+    sc.onerror=function(){ started=false; };
+    document.head.appendChild(sc);
+  }
+  document.addEventListener('click', function(){ setTimeout(fill, 50); }, true);
+})();
+</script>
+"""
+if wanted:
+    s = s.replace("</body>", LOADER + "</body>", 1)
 
 # 3. refuse to ship duplicate ids — this is exactly what went wrong before
 ids = re.findall(r'\sid="([^"]+)"', s)
@@ -65,6 +100,14 @@ if missing:
     print(f"  ! placeholders with no image: {sorted(set(missing))}")
 print(f"  duplicate ids: none")
 PY
+
+python3 - "$SHOTS" "$STAGE/kb-shots.js" <<'PY2'
+import json, os, sys
+src, dst = sys.argv[1], sys.argv[2]
+shots = json.load(open(src)) if os.path.exists(src) else {}
+open(dst, "w", encoding="utf-8").write("window.KB_SHOTS=" + json.dumps(shots) + ";")
+print(f"  kb-shots.js: {os.path.getsize(dst)/1024:.0f} KB, loaded only when the guide is opened")
+PY2
 
 cat > "$STAGE/robots.txt" <<'EOF'
 User-agent: *

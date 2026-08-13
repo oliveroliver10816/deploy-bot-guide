@@ -246,6 +246,13 @@ console.log("\n── deploy fan-out ──");
   const build = h.calls.find((c) => c.url.includes("/builds") && c.method === "POST");
   ok(!!build && JSON.parse(build.body).source_blob.url.includes("codeload.github.com"),
      "Heroku gets the signed GitHub URL, so repo contents never transit the Worker");
+
+  // GitHub caches BRANCH archives, so a branch tarball taken right after a push
+  // can be the previous snapshot. The archive must be pinned to the new commit.
+  const tarReq = h.calls.find((c) => c.url.includes("/tarball/"));
+  ok(!!tarReq && tarReq.url.endsWith("/tarball/commitABC"),
+     "the build archive is pinned to the commit just made, not to the branch",
+     tarReq ? tarReq.url : "no tarball request");
 }
 
 console.log("\n── an app with no repository ──");
@@ -274,6 +281,94 @@ console.log("\n── two apps sharing one repository ──");
   ok(skipped.length === 1, "the second app on the same repo is skipped, not committed twice",
      JSON.stringify(st.body.targets.map(t => [t.label, t.status])));
   ok(/same repository/i.test(skipped[0].detail || ""), "and the reason is stated");
+}
+
+console.log("\n── repository files ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  const app = byName["site-one"].id;
+
+  const t = (await call(h, "GET", `/api/files/${app}`, { token: m })).body;
+  ok(Array.isArray(t.entries) && t.entries.length === 5, "the whole repo tree is listed", String(t.entries?.length));
+  ok(t.entries.some((e) => e.type === "tree" && e.path === "assets"), "folders appear as folders");
+  ok(t.buildpack === null, "a repo of plain HTML is reported as having NO buildpack — the exact cause of 'No default language could be detected'");
+
+  // one commit for many files, however many are sent
+  h.state.blobsWritten.length = 0; h.state.commitsWritten.length = 0;
+  const many = await call(h, "POST", `/api/files/${app}`, { token: m, json: { files: [
+    { path: "a.html", contentB64: Buffer.from("<h1>a</h1>").toString("base64") },
+    { path: "css/b.css", contentB64: Buffer.from("body{}").toString("base64") },
+    { path: "css/img/c.txt", contentB64: Buffer.from("c").toString("base64") },
+  ] } });
+  ok(many.status === 200 && many.body.changed === 3, "a whole folder of files uploads at once", JSON.stringify(many.body));
+  ok(h.state.commitsWritten.length === 1, "as ONE commit, not one per file", String(h.state.commitsWritten.length));
+  ok(h.state.blobsWritten.length === 3, "each file is stored");
+
+  // deleting a folder removes every file beneath it
+  h.state.treesWritten.length = 0;
+  const del = await call(h, "POST", `/api/files/${app}`, { token: m, json: { remove: ["assets"] } });
+  ok(del.status === 200 && del.body.removed === 2, "deleting a folder removes every file inside it", JSON.stringify(del.body));
+  const nulls = (h.state.treesWritten[0]?.tree || []).filter((x) => x.sha === null).map((x) => x.path).sort();
+  ok(nulls.join(",") === "assets/app.css,assets/logo.png", "by path, not by guessing", nulls.join(","));
+
+  const one = await call(h, "POST", `/api/files/${app}`, { token: m, json: { remove: ["index.html"] } });
+  ok(one.status === 200 && one.body.removed === 1, "a single file can be deleted too");
+
+  const bad = await call(h, "POST", `/api/files/${app}`, { token: m, json: { files: [
+    { path: "../../etc/passwd", contentB64: "eA==" } ] } });
+  ok(bad.status === 400 && /Invalid path/i.test(bad.body.error), "a path that escapes the repo is refused");
+
+  const gone = await call(h, "POST", `/api/files/${app}`, { token: m, json: { remove: ["nothing-here"] } });
+  ok(gone.status === 400, "removing something that is not there says so");
+
+  const nolink = await call(h, "GET", `/api/files/${byName["app-two"].id}`, { token: m });
+  ok(nolink.status === 400 && /Link a repository/i.test(nolink.body.error), "an app with no repo explains itself");
+}
+
+console.log("\n── the Heroku buildpack trap ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  const app = byName["site-one"].id;
+
+  h.state.commitsWritten.length = 0;
+  const fix = await call(h, "POST", "/api/makedeployable", { token: m, json: { app_id: app } });
+  ok(fix.status === 200 && fix.body.added === "index.php", "one click adds the index.php Heroku needs", JSON.stringify(fix.body));
+  const wrote = h.state.blobsWritten.slice(-1)[0];
+  ok(Buffer.from(wrote.content, "base64").toString().includes('include_once("index.html")'),
+     "and it serves the existing index.html");
+
+  // once a marker exists the buildpack is detected and nothing is added again
+  h.state.gitTree = [{ path: "index.php", type: "blob", size: 36, sha: "x" },
+                     { path: "index.html", type: "blob", size: 10, sha: "y" }];
+  const again = await call(h, "POST", "/api/makedeployable", { token: m, json: { app_id: app } });
+  ok(again.body.already === "php", "a repo that already builds is left alone", JSON.stringify(again.body));
+
+  h.state.gitTree = [{ path: "package.json", type: "blob", size: 20, sha: "z" }];
+  const t2 = (await call(h, "GET", `/api/files/${app}`, { token: m })).body;
+  ok(t2.buildpack === "nodejs", "node projects are recognised");
+
+  h.state.gitTree = [{ path: "notes.txt", type: "blob", size: 5, sha: "q" }];
+  const t3 = (await call(h, "POST", "/api/makedeployable", { token: m, json: { app_id: app } }));
+  ok(t3.status === 400 && /no index\.html/i.test(t3.body.error), "with no index.html it says so rather than committing junk");
+}
+
+console.log("\n── recent activity names where the file went ──");
+{
+  const h = newEnv();
+  const { m, byName } = await setup(h);
+  const a1 = await ready(h, m, byName, "site-one", "site-one");
+  const a2 = await ready(h, m, byName, "app-one", "site-two");
+  await call(h, "POST", "/api/deploy", { token: m, form: upload("home.html", "x", [a1, a2]) });
+  const recent = (await call(h, "GET", "/api/state", { token: m })).body.recent;
+  ok(recent.length >= 1, "the deploy shows up in recent activity");
+  const r = recent[0];
+  ok(r.file === "home.html", "the file name is shown", String(r.file));
+  ok(typeof r.targets === "string" && r.targets.length > 0,
+     "and WHERE it went is included, not just a batch id", JSON.stringify(r.targets));
+  ok(r.targets.includes("site-one") && r.targets.includes("app-one"),
+     "naming every app it was sent to", String(r.targets));
 }
 
 console.log("\n── activity log ──");

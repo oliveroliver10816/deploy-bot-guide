@@ -29,7 +29,12 @@ export function makeDB() {
       return { success: true };
     },
   });
-  return { prepare: (sql) => wrap(sql), _raw: db };
+  return {
+    prepare: (sql) => wrap(sql),
+    // D1 sends a batch in one round trip; the shim just runs them in order.
+    batch: async (stmts) => Promise.all(stmts.map((st) => st.all())),
+    _raw: db,
+  };
 }
 
 // ------------------------------------------------------------ fetch mock ---
@@ -60,6 +65,15 @@ export function makeNet(opts = {}) {
     buildStatus: opts.buildStatus ?? "pending",
     buildLog: opts.buildLog ?? "-----> Build failed\nsome compiler error\n",
     ghUser: opts.ghUser ?? "bobaccount",
+    // a static site: index.html only, which is exactly what Heroku cannot build
+    gitTree: opts.gitTree ?? [
+      { path: "README.md", type: "blob", size: 13, sha: "b1" },
+      { path: "index.html", type: "blob", size: 8600, sha: "b2" },
+      { path: "assets", type: "tree", sha: "t1" },
+      { path: "assets/app.css", type: "blob", size: 400, sha: "b3" },
+      { path: "assets/logo.png", type: "blob", size: 900, sha: "b4" },
+    ],
+    blobsWritten: [], treesWritten: [], commitsWritten: [],
     hkUser: opts.hkUser ?? "bob@example.com",
     ghPutStatus: opts.ghPutStatus ?? 200,
     tarballBytes: opts.tarballBytes ?? 4096,
@@ -115,6 +129,32 @@ export function makeNet(opts = {}) {
         const c = state.blobs[m[3]];
         if (!c) return J({ message: "Not Found" }, 404);
         return J({ content: c, encoding: "base64" });
+      }
+
+      // ---- git data API ----
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\//.test(p)) {
+        return J({ object: { sha: "commitHEAD" } });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/commits\/[^/]+$/.test(p) && method === "GET") {
+        return J({ tree: { sha: "treeHEAD" } });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/trees\/[^/?]+/.test(p) && method === "GET") {
+        return J({ sha: "treeHEAD", truncated: false, tree: state.gitTree });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/blobs$/.test(p) && method === "POST") {
+        state.blobsWritten.push(JSON.parse(init.body));
+        return J({ sha: "blob" + state.blobsWritten.length });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/trees$/.test(p) && method === "POST") {
+        state.treesWritten.push(JSON.parse(init.body));
+        return J({ sha: "treeNEW" });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/commits$/.test(p) && method === "POST") {
+        state.commitsWritten.push(JSON.parse(init.body));
+        return J({ sha: "commitNEW" });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\//.test(p) && method === "PATCH") {
+        return J({ ref: "refs/heads/main" });
       }
 
       m = p.match(/^\/repos\/([^/]+)\/([^/]+)\/tarball\/(.+)$/);

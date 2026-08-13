@@ -180,3 +180,88 @@ export async function createRepo(token, name, isPrivate = true, f = fetch) {
   }
   return { owner: r.body.owner.login, repo: r.body.name, full_name: r.body.full_name, branch: r.body.default_branch || "main" };
 }
+
+// ---------------------------------------------------------------- git data API
+// One commit for many changes. The Contents API can only touch a single file per
+// call, which makes a folder upload N commits and a folder delete impossible.
+
+/** Full recursive tree at a ref, so a folder's contents can be found. */
+export async function treeOf(token, owner, repo, branch, f = fetch) {
+  const ref = await gh(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {}, f);
+  if (!ref.ok) throw new Error(`Could not read the branch (HTTP ${ref.status}): ${ref.body?.message || ""}`);
+  const commitSha = ref.body.object.sha;
+  const commit = await gh(token, `/repos/${owner}/${repo}/git/commits/${commitSha}`, {}, f);
+  if (!commit.ok) throw new Error(`Could not read the last commit (HTTP ${commit.status}).`);
+  const treeSha = commit.body.tree.sha;
+  const tree = await gh(token, `/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`, {}, f);
+  if (!tree.ok) throw new Error(`Could not read the file list (HTTP ${tree.status}).`);
+  return {
+    commitSha, treeSha,
+    truncated: !!tree.body.truncated,
+    entries: (tree.body.tree || []).map((e) => ({ path: e.path, type: e.type, size: e.size || 0, sha: e.sha })),
+  };
+}
+
+/**
+ * Apply many additions and deletions as ONE commit.
+ * `files`: [{path, contentB64}]  `remove`: [path, ...] (already expanded to files)
+ */
+export async function commitChanges(token, { owner, repo, branch, message, files = [], remove = [] }, f = fetch) {
+  if (!files.length && !remove.length) throw new Error("Nothing to commit.");
+  const base = await treeOf(token, owner, repo, branch, f);
+
+  const tree = [];
+  for (const file of files) {
+    const blob = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
+      method: "POST", body: JSON.stringify({ content: file.contentB64, encoding: "base64" }),
+    }, f);
+    if (!blob.ok) throw new Error(`Could not store ${file.path} (HTTP ${blob.status}): ${blob.body?.message || ""}`);
+    tree.push({ path: file.path, mode: "100644", type: "blob", sha: blob.body.sha });
+  }
+  // A null sha removes the path from the new tree.
+  for (const path of remove) tree.push({ path, mode: "100644", type: "blob", sha: null });
+
+  const newTree = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
+    method: "POST", body: JSON.stringify({ base_tree: base.treeSha, tree }),
+  }, f);
+  if (!newTree.ok) throw new Error(`Could not build the change (HTTP ${newTree.status}): ${newTree.body?.message || ""}`);
+
+  const commit = await gh(token, `/repos/${owner}/${repo}/git/commits`, {
+    method: "POST", body: JSON.stringify({ message, tree: newTree.body.sha, parents: [base.commitSha] }),
+  }, f);
+  if (!commit.ok) throw new Error(`Could not create the commit (HTTP ${commit.status}): ${commit.body?.message || ""}`);
+
+  const upd = await gh(token, `/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`, {
+    method: "PATCH", body: JSON.stringify({ sha: commit.body.sha }),
+  }, f);
+  if (!upd.ok) throw new Error(`Could not update the branch (HTTP ${upd.status}): ${upd.body?.message || ""}`);
+  return { commitSha: commit.body.sha, changed: files.length, removed: remove.length };
+}
+
+/** File contents as base64, by path. */
+export async function readFile(token, owner, repo, branch, path, f = fetch) {
+  const r = await gh(token, `/repos/${owner}/${repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(branch)}`, {}, f);
+  if (r.status === 404) throw new Error("That file is not in the repository.");
+  if (!r.ok) throw new Error(`Could not open the file (HTTP ${r.status}): ${r.body?.message || ""}`);
+  if (Array.isArray(r.body)) throw new Error("That is a folder, not a file.");
+  return { contentB64: (r.body.content || "").replace(/\s/g, ""), sha: r.body.sha, size: r.body.size };
+}
+
+/**
+ * Which buildpack Heroku will detect, if any.
+ * Verified against heroku-buildpack-php/bin/detect: PHP is detected on
+ * composer.json OR index.php. A repo of plain .html files matches nothing and
+ * the build fails with "No default language could be detected".
+ */
+export function buildpackFor(paths) {
+  const has = (p) => paths.includes(p);
+  if (has("composer.json") || has("index.php")) return "php";
+  if (has("package.json")) return "nodejs";
+  if (has("requirements.txt") || has("Pipfile") || has("setup.py")) return "python";
+  if (has("Gemfile")) return "ruby";
+  if (has("go.mod")) return "go";
+  if (has("pom.xml") || has("build.gradle")) return "java";
+  if (has("Cargo.toml")) return "rust";
+  if (has("static.json")) return "static";
+  return null;
+}
