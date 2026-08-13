@@ -318,3 +318,49 @@ than a disabled one, and the People tab is `hidden` rather than absent. Verify b
   uploaded page can still be identified, and prints the next number to bump to.
   **v4 is built and staged; v1–v3 shipped under the unnumbered name.**
 - **The download link goes at the END of every reply**, not only mid-message.
+
+
+## v4 (2026-08-13) — file manager, editor, buildpack fix, speed
+
+**Answered his Heroku failure.** `parusmetals` failed with *"No default language could be detected"*
+because the repo held only `index.html`. Verified against the buildpack's OWN detect script
+(`heroku-buildpack-php/bin/detect`): **PHP is detected on `composer.json` OR `index.php`** — nothing
+else matches a folder of HTML. `POST /api/makedeployable` adds a one-line `index.php` that includes
+the existing `index.html`, and refuses when a marker already exists.
+
+⭐⭐ **REAL BUG FOUND, mine: deploys could build a STALE snapshot.** His app served an empty page —
+`/home.html` 404'd on Heroku while the repo had it. Cause: we handed Heroku a **branch** archive URL
+immediately after committing, and **GitHub caches branch archives**. Now pinned to the commit SHA
+we just created (`/tarball/<sha>`), which cannot be stale. Test locks it.
+
+**File manager** — `GET/POST /api/files/{appId}`, `GET /api/file`. Built on the **Git Data API**
+(blobs → tree → commit → ref) so a folder upload is ONE commit and a folder delete is possible at
+all; the Contents API can only touch one file per call. Deleting a folder expands to every blob
+beneath it, server-side. 30 MB per batch. Path traversal refused.
+UI: tree + editor with syntax highlighting (lazy — nothing runs before a file is opened), New file /
+New folder / Upload files / Upload folder (`webkitdirectory`) / Rename / Delete / Save, images
+preview instead of opening, >300 KB opens as plain text.
+
+**Speed.** Page **316 KB → 123 KB**: the ~200 KB of KB screenshots now live in `kb-shots.js`, fetched
+only when the guide is first opened. `/api/state` batched into **one** D1 round trip (`env.DB.batch`)
+— 5 queries now cost what 1 did. Measured: health ~70 ms, one query ~180 ms, `/api/state` ~270 ms
+from Europe. ⚠️ The floor is the hop to D1 in **ENAM**; if he and the VA work from India, **APAC**
+would roughly halve it. Still unanswered — ask before moving.
+
+**Also:** app URLs are click-to-copy; recent activity now names the destination app
+(`recent[].targets` via `group_concat`) instead of showing only a batch id.
+
+### Traps hit this round
+- ⭐ `build.sh` injected the loader at the **first `</body>`** — which is inside the offline mock's
+  sample HTML string, so it closed the real `<script>` and broke the whole page. Use the **last**.
+  Same lesson as [[never-inject-into-your-own-source-file]]: never anchor on text that occurs twice.
+- ⭐ A `white-space:nowrap` line in the activity list had a huge min-content and pushed the layout
+  past the viewport at three widths. `min-width:0` alone does **not** stop an auto-sized grid track —
+  let it wrap. Related: [[css-grid-1fr-wont-shrink]].
+- v4's own MOCK_API called an undefined `copy()` helper, so offline preview could not sign in.
+- Three v4 test failures were the TESTS, not the product: the rail nav opens Files with no app
+  chosen (must click the app card's chip), the tree starts collapsed, and an unlinked app has no
+  checkbox at all.
+
+**Tests:** node **122 panel + 69 bot**; browser `wide.py`, `v2.py`, `v3.py`, `shots.py`.
+**Shipped as `deploy-panel-v4.zip`** (release `panel-v4`); `panel/VERSION` bumped to 5.

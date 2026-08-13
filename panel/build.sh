@@ -81,7 +81,11 @@ LOADER = """
 </script>
 """
 if wanted:
-    s = s.replace("</body>", LOADER + "</body>", 1)
+    # The LAST </body>, never the first: the offline mock embeds a sample HTML
+    # document as a string, so an early </body> lives inside JavaScript and
+    # injecting there closes the real script block and breaks the whole page.
+    k = s.rindex("</body>")
+    s = s[:k] + LOADER + s[k:]
 
 # 3. refuse to ship duplicate ids — this is exactly what went wrong before
 ids = re.findall(r'\sid="([^"]+)"', s)
@@ -90,7 +94,10 @@ if dupes:
     sys.exit(f"duplicate element ids in the page: {dupes}")
 
 # stamp the version so a page can always be identified after upload
-s = s.replace("<!doctype html>", f"<!doctype html>\n<!-- deploy panel v{version} -->", 1)
+if s.lstrip().lower().startswith("<!doctype"):
+    k = s.lower().index("<!doctype")
+    e = s.index(">", k) + 1
+    s = s[:e] + f"\n<!-- deploy panel v{version} -->" + s[e:]
 s = re.sub(r'(<title>)([^<]*)(</title>)', r'\1\2\3', s, count=1)
 
 open(path, "w", encoding="utf-8").write(s)

@@ -423,6 +423,95 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
 .l-flag.bad{color:var(--err)}
 
 /* ============================================================
+   6c. FILES — repository browser + editor. Tree on the left,
+   the file on the right. Same tokens, same component language.
+   ============================================================ */
+.files-grid{display:grid;gap:var(--sp-5);align-items:start;
+  grid-template-columns:clamp(260px,22vw,380px) minmax(0,1fr)}
+.fv-tools{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.fv-repoline{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center;
+  padding-bottom:var(--sp-3);margin-bottom:var(--sp-3);border-bottom:var(--bw) solid var(--line-1)}
+.fv-tree{overflow:auto;min-height:0}
+.tree-kids{margin:0;padding-left:var(--sp-4);list-style:none}
+.fv-tree>.tree-kids{padding-left:0}
+.tree-row{display:flex;align-items:center;gap:var(--sp-2);width:100%;min-height:var(--row-min);
+  padding:2px var(--sp-2);border:0;border-radius:var(--r-1);background:transparent;cursor:pointer;
+  color:var(--ink-2);font:400 var(--fs-0)/1.3 var(--mono);text-align:left;
+  transition:background .12s,color .12s}
+.tree-row:hover{background:var(--bg-3);color:var(--ink-1)}
+.tree-row[aria-current="true"]{background:var(--bg-3);color:var(--ink-1);box-shadow:var(--edge)}
+.tree-row .ic-s{color:var(--ink-3);flex:none}
+.tree-row .tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tree-size{font-size:var(--fs--2);color:var(--ink-4);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tree-chev{width:var(--ic-s);height:var(--ic-s);flex:none;stroke:currentColor;fill:none;
+  stroke-width:var(--stroke-s);stroke-linecap:round;stroke-linejoin:round;
+  color:var(--ink-4);transition:transform .12s}
+li.tdir.open>.tree-row .tree-chev{transform:rotate(90deg)}
+.fv-crumb{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;min-width:0;
+  font-family:var(--mono);font-size:var(--fs-0)}
+.fv-crumb button{border:0;background:transparent;cursor:pointer;color:var(--ink-3);
+  font:inherit;padding:var(--sp-1) var(--sp-1);border-radius:var(--r-0);min-height:var(--row-min)}
+.fv-crumb button:hover{color:var(--ink-1);background:var(--bg-3)}
+.fv-crumb .cur{color:var(--ink-1);font-weight:600;overflow-wrap:anywhere;padding:var(--sp-1) var(--sp-1)}
+.fv-crumb .sep{color:var(--ink-4)}
+.fv-pane-head{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);align-items:center;
+  justify-content:space-between;padding-bottom:var(--sp-3);margin-bottom:var(--sp-3);
+  border-bottom:var(--bw) solid var(--line-1)}
+.fv-pane-actions{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin-left:auto}
+.fv-note{font-size:var(--fs--1);color:var(--ink-3);margin:var(--sp-2) 0}
+.fv-img{display:block;max-width:100%;border:var(--bw) solid var(--line-1);border-radius:var(--r-1);
+  background:var(--bg-1);padding:var(--sp-3);margin-top:var(--sp-3)}
+.fv-list .rrow{cursor:pointer}
+.fv-list .rrow:hover .r-file{color:var(--accent-hi)}
+button.site-card{font:inherit;text-align:left;width:100%}
+.bp-banner{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;font-size:var(--fs-0);
+  color:var(--ink-1);background:var(--accent-dim);border:var(--bw) solid var(--accent-line);
+  border-radius:var(--r-2);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4)}
+.bp-banner .ic{color:var(--accent);flex:none}
+.bp-banner>span{flex:1 1 260px;min-width:0}
+.bp-banner .bp-sub{display:block;font-size:var(--fs--1);color:var(--ink-3);margin-top:2px}
+.bp-quiet{display:inline-flex;align-items:center;gap:var(--sp-1);font-size:var(--fs--1);color:var(--ink-3)}
+.bp-quiet .ic-s{color:var(--ok)}
+.sc-bp{display:inline-flex;align-items:flex-start;gap:var(--sp-1);font-size:var(--fs--1);
+  color:var(--accent);font-weight:650;margin-top:2px}
+.sc-bp .ic-s{flex:none;margin-top:2px}
+.chipbtn{cursor:pointer;transition:border-color .13s,color .13s}
+.chipbtn:hover{border-color:var(--accent-line);color:var(--ink-1)}
+
+/* editor — a transparent textarea over a highlighted pre, one scroller.
+   Both layers share font, line-height, padding and tab-size, so the
+   caret always sits exactly on the coloured glyph beneath it. */
+.ed{display:grid;grid-template-columns:auto minmax(0,1fr);border:var(--bw) solid var(--line-2);
+  border-radius:var(--r-1);background:var(--bg-1);overflow:hidden;height:min(64vh,720px)}
+.ed-gut{background:var(--bg-2);border-right:var(--bw) solid var(--line-1);
+  overflow:hidden;user-select:none}
+.ed-gut>div{padding:var(--sp-3) var(--sp-2);text-align:right;color:var(--ink-4);
+  font:400 var(--fs--1)/1.5 var(--mono);white-space:pre;min-width:3.5ch}
+.ed-body{position:relative;overflow:hidden}
+.ed-hl,.ed-ta{margin:0;border:0;padding:var(--sp-3);font:400 var(--fs--1)/1.5 var(--mono);
+  white-space:pre;tab-size:2}
+.ed-hl{position:absolute;top:0;left:0;min-width:100%;pointer-events:none;color:var(--ink-2)}
+.ed-hl code{font:inherit;background:transparent;border:0;padding:0;border-radius:0;color:inherit}
+.ed-ta{position:absolute;inset:0;width:100%;height:100%;resize:none;overflow:auto;
+  background:transparent;color:transparent;-webkit-text-fill-color:transparent;
+  caret-color:var(--ink-1);outline:none;overflow-wrap:normal;word-break:normal}
+.ed-ta::selection{background:rgba(237,174,73,.25)}
+.ed.plain .ed-ta{color:var(--ink-2);-webkit-text-fill-color:var(--ink-2)}
+.ed.plain .ed-hl{display:none}
+.tk-c{color:var(--ink-4);font-style:italic}
+.tk-s{color:var(--ok)}
+.tk-n{color:var(--saved)}
+.tk-k{color:var(--accent)}
+.tk-t{color:var(--accent-hi)}
+.tk-a{color:var(--saved)}
+.tk-v{color:var(--err)}
+.tk-h{color:var(--accent-hi);font-weight:700}
+@media (max-width:1160px){
+  .files-grid{grid-template-columns:minmax(0,1fr)}
+  .fv-tree{max-height:40vh}
+}
+
+/* ============================================================
    7. KNOWLEDGE BASE — chapter list + reading pane, plus an
    on-this-page / screenshot rail on ultrawide (see §10).
    ============================================================ */
@@ -629,7 +718,41 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   .kb-grid{flex:1;min-height:0}
   .kb-grid > .kb-list,.kb-grid > .kb-pane,.kb-grid > .kb-aside{overflow:auto;min-height:0}
   .set-body{flex:1;min-height:0;overflow:auto}
+  #view-files .files-grid{flex:1;min-height:0;align-items:stretch}
+  #view-files .fv-treewrap{display:flex;flex-direction:column;min-height:0}
+  #view-files .fv-tree{flex:1}
+  #view-files .fv-panewrap{display:flex;flex-direction:column;min-height:0}
+  #view-files #fvPaneBody{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+  #view-files .ed{flex:1;height:auto;min-height:280px}
 }
+
+/* ---- click-to-copy address ---- */
+.sc-url.copyurl{display:inline-flex;align-items:center;gap:var(--sp-2);background:none;border:0;padding:2px 0;
+  font:inherit;color:inherit;cursor:pointer;text-align:left;max-width:100%;min-width:0;overflow:hidden}
+/* The address must be allowed to truncate. Without this its min-content width
+   props the whole card open and pushes the layout off narrow screens. */
+.sc-url.copyurl .copytxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-url.copyurl .copyic{opacity:0;flex:none;transition:opacity .12s}
+.sc-url.copyurl:hover .copyic,.sc-url.copyurl:focus-visible .copyic{opacity:.75}
+.sc-url.copyurl.copied{color:var(--ok)}
+.sc-url.copyurl.copied .copyic{opacity:1}
+@media (prefers-reduced-motion:reduce){.sc-url.copyurl .copyic{transition:none}}
+
+/* ---- where an update went ---- */
+/* Let the destination list WRAP. Forcing it onto one line gave it a huge
+   min-content width, and the parent row's auto track sized to it and pushed the
+   whole activity column past the viewport — min-width:0 alone does not stop an
+   auto-sized grid track. Two lines maximum, then ellipsis. */
+.r-where{display:flex;align-items:flex-start;gap:var(--sp-2);font-size:var(--fs--1);
+  color:var(--ink-2);min-width:0}
+.r-where .ic{margin-top:2px}
+.r-where>span{min-width:0;overflow:hidden;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.rrow{min-width:0}
+.r-main{min-width:0}
+.r-main>*{min-width:0;max-width:100%}
+.r-where .ic{flex:none;opacity:.7}
+.batch-where{font-size:var(--fs--1);color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -644,7 +767,8 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></symbol>
-  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
@@ -657,11 +781,18 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.47"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+  <symbol id="i-fileplus" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 12v6M9 15h6"/></symbol>
+  <symbol id="i-folderplus" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 10v6M9 13h6"/></symbol>
 </svg>
 
 <div class="vh" id="srLive" role="status" aria-live="polite"></div>
 <div class="toasts" id="toasts"></div>
 <dialog id="repoDlg" aria-label="Choose a repository"></dialog>
+<dialog id="fvDlg" aria-label="File action"></dialog>
 
 <!-- ================= SIGN IN ================= -->
 <div id="auth" class="auth" hidden>
@@ -694,6 +825,8 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
     <nav class="rail-nav" aria-label="Main">
       <button type="button" class="nav-item" data-view="deploy" aria-label="Deploy">
         <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span class="lbl">Deploy</span></button>
+      <button type="button" class="nav-item" data-view="files" aria-label="Files">
+        <svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg><span class="lbl">Files</span></button>
       <button type="button" class="nav-item" data-view="log" aria-label="Activity log">
         <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg><span class="lbl">Activity log</span></button>
       <button type="button" class="nav-item" data-view="kb" aria-label="Knowledge base">
@@ -753,6 +886,36 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
           </section>
         </div>
       </div>
+    </section>
+
+    <!-- ===== FILES ===== -->
+    <section id="view-files" class="view" aria-label="Files" hidden>
+      <header class="view-head">
+        <div>
+          <h1 tabindex="-1">Files</h1>
+          <p class="sub">Browse and change the files of an app&rsquo;s repository — the same way the GitHub screen works, without leaving the panel.</p>
+        </div>
+        <div class="fv-tools" id="fvTools" hidden>
+          <button type="button" class="btn btn-secondary btn-sm" id="fvNewFile"><svg class="ic ic-s" aria-hidden="true"><use href="#i-fileplus"/></svg>New file</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="fvNewFolder"><svg class="ic ic-s" aria-hidden="true"><use href="#i-folderplus"/></svg>New folder</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="fvUpFiles"><svg class="ic ic-s" aria-hidden="true"><use href="#i-upload"/></svg>Upload files</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="fvUpFolder"><svg class="ic ic-s" aria-hidden="true"><use href="#i-upload"/></svg>Upload folder</button>
+        </div>
+      </header>
+      <div id="fvBanner"></div>
+      <div id="fvPick"></div>
+      <div class="files-grid" id="fvGrid" hidden>
+        <section class="panel fv-treewrap" aria-label="Repository tree">
+          <div class="fv-repoline" id="fvRepoLine"></div>
+          <div class="fv-tree" id="fvTree"></div>
+        </section>
+        <section class="panel fv-panewrap" aria-label="Selected file">
+          <div class="fv-pane-head" id="fvPaneHead"></div>
+          <div id="fvPaneBody"></div>
+        </section>
+      </div>
+      <input type="file" id="fvFileInput" class="vh" multiple tabindex="-1" aria-label="Files to upload">
+      <input type="file" id="fvDirInput" class="vh" webkitdirectory tabindex="-1" aria-label="Folder to upload">
     </section>
 
     <!-- ===== ACTIVITY LOG ===== -->
@@ -881,6 +1044,26 @@ dialog::backdrop{background:rgba(4,6,10,.6);backdrop-filter:blur(2px)}
   <p>Choosing a different repository later just moves the link. Picking <em>No repository</em> unlinks the app — it goes back to <em>Needs a repository</em> and stops receiving files.</p>
   <h3>Set the folder and branch</h3>
   <p>The folder is where a sent file lands inside the repository — usually <code>public/</code>. Press <em>Edit</em> on the app’s row under <em>Settings → Apps</em> to change the folder or the branch. Set it once per app; you never need to touch it for a normal update.</p>
+</template>
+
+<template id="kb-files">
+  <p class="lead">Every app card on the Deploy screen carries a small folder chip under the app name. Press it and that app&rsquo;s repository opens in the <em>Files</em> screen: the folders on the left, the file you picked on the right. It works the same way the GitHub website does — browse, add, upload, rename, delete and edit — and every change is one recorded commit. The <em>Files</em> entry in the left rail goes to the same screen.</p>
+  <h3>Browse</h3>
+  <p>Folders sit in the tree on the left — folders first, then files, A to Z. Click a folder to open it and see what is inside; click a file to open it on the right. The line above the file shows where you are, the file&rsquo;s size, and the repository and branch every change is written to.</p>
+  <h3>Add a new file or folder</h3>
+  <ol class="steps">
+    <li>Open the folder where the new item belongs — what you add lands where you are browsing.</li>
+    <li>Press <em>New file</em> or <em>New folder</em> at the top, type the name, press OK.</li>
+    <li>A new file opens straight in the editor, empty and ready to type. A new folder appears in the tree with a small placeholder file inside — repositories cannot hold a truly empty folder, so the panel puts one there for you and it does no harm.</li>
+  </ol>
+  <h3>Upload files, or a whole folder</h3>
+  <p><em>Upload files</em> takes one or more files from your computer and puts them in the folder you are looking at. <em>Upload folder</em> takes a <strong>complete folder</strong> — subfolders and all — and lands its contents where you are browsing, keeping the structure. Either way everything arrives as <strong>one</strong> recorded change, so the history stays clean.</p>
+  <h3>Rename and delete</h3>
+  <p>With a file open, <em>Rename</em> and <em>Delete</em> sit above it. Deleting needs two presses — the second press is the confirmation. To delete a whole folder, click the folder in the tree, then press <em>Delete folder</em>: the button tells you first how many files are inside, and that count is exactly what will be removed.</p>
+  <h3>Edit and save</h3>
+  <p>Text files open in the editor with line numbers and colours by file type — HTML, PHP, CSS, JS and friends. Change what you need and press <em>Save</em>, or Ctrl+S (Cmd+S on a Mac). If you try to leave with unsaved changes, the panel asks first. Very large files open as plain text so the screen stays fast; pictures show a preview instead of opening in the editor.</p>
+  <h3>&ldquo;Heroku cannot build this app yet&rdquo;</h3>
+  <p>If a banner with these words appears, the repository only holds web pages, and Heroku needs to see an application before it will build one. Press <em>Make it deployable</em> — the panel adds one small file (<code>index.php</code>) that serves your existing <code>index.html</code>, and Heroku is satisfied. Your pages are not touched. When the banner instead quietly says what Heroku will build the app as, there is nothing to do.</p>
 </template>
 
 <template id="kb-create">
@@ -1012,7 +1195,8 @@ const S={
   batch:null, pollT:null,
   view:'deploy', kb:'send', tab:'accounts',
   repos:null,
-  editing:null, armed:null, undoAsk:null, undoneRecent:new Set()
+  editing:null, armed:null, undoAsk:null, undoneRecent:new Set(),
+  fv:null, bp:{}
 };
 
 /* ---------- API layer ---------- */
@@ -1059,8 +1243,10 @@ const MOCK_API=(()=>{
     combos:[{id:'c1',label:'northgate-ops + owner@northgate-ops.dev',github:'northgate-ops',heroku:'owner@northgate-ops.dev',github_conn_id:'g1',heroku_conn_id:'h1',apps:6}],
     users:[{username:'owner',role:'owner'},{username:'maria',role:'va'}],
     recent:[
-      {id:'b90',at:new Date(now-864e5).toISOString(),who:'maria',file:'summer-sale.html',sites:4,ok:4,failed:0},
-      {id:'b89',at:new Date(now-3*864e5).toISOString(),who:'owner',file:'pricelist.pdf',sites:2,ok:1,failed:1}
+      {id:'b90',at:new Date(now-864e5).toISOString(),who:'maria',file:'summer-sale.html',sites:4,ok:4,failed:0,
+       targets:'northgate-supply, brightleaf-web, clearwater-labs, summit-tools'},
+      {id:'b89',at:new Date(now-3*864e5).toISOString(),who:'owner',file:'pricelist.pdf',sites:2,ok:1,failed:1,
+       targets:'northgate-supply, harbourpoint-demo'}
     ],
     repos:[
       {id:'r1',label:'northgate-ops/northgate-site',owner:'northgate-ops',name:'northgate-site',branch:'main',dir:'public/',account:'g1'},
@@ -1083,7 +1269,28 @@ const MOCK_API=(()=>{
     batches:{}
   };
   let seq=200;
-  const copy=v=>JSON.parse(JSON.stringify(v));
+  /* mock filesystem — one per app, made on first open. buildpack:null so the
+     "Make it deployable" banner and the editor can both be seen offline. */
+  const FS={};
+  const b64=s=>btoa(unescape(encodeURIComponent(s)));
+  const PX_PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  function mockFs(id){
+    if(FS[id])return FS[id];
+    const f=new Map();
+    f.set('public/index.html',b64('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Sample site</title>\n<link rel="stylesheet" href="css/style.css">\n</head>\n<body>\n  <!-- the hero -->\n  <h1 class="hero">Welcome</h1>\n  <p>Open hours: 9 to 5, Monday to Friday.</p>\n  <script src="js/app.js"><\/script>\n</body>\n</html>\n'));
+    f.set('public/css/style.css',b64('/* site styles */\n:root{--brand:#345678;--pad:16px}\n.hero{color:var(--brand);font-size:2rem;padding:var(--pad)}\n@media (max-width:600px){.hero{font-size:1.4rem}}\n'));
+    f.set('public/js/app.js',b64("// tiny sample script\nconst greeting='Hello from the sample app';\nfunction start(){\n  console.log(greeting, 40 + 2);\n}\ndocument.addEventListener('DOMContentLoaded', start);\n"));
+    f.set('public/img/logo.png',PX_PNG);
+    f.set('README.md',b64('# Sample site\n\nA small demo repository so the Files screen can be tried offline.\n\n- `public/` holds the pages\n- edit `public/index.html` and press Save\n'));
+    FS[id]={buildpack:null,files:f};
+    return FS[id];
+  }
+  /* Deep-clone every mock reply so callers cannot mutate the fake database by
+     holding on to a reference — `copy` was referenced here but never defined. */
+  const copy=v=>{
+    if(v===undefined||v===null)return v;
+    try{ return structuredClone(v); }catch(e){ try{ return JSON.parse(JSON.stringify(v)); }catch(e2){ return v; } }
+  };
   const delay=v=>new Promise(r=>setTimeout(()=>r(copy(v)),200+Math.random()*180));
   const fail=m=>{const e=new Error(m);e.mock=true;return e;};
   const TERM=['live','failed','skipped','no_app'];
@@ -1271,6 +1478,55 @@ const MOCK_API=(()=>{
       log('password','','Password changed');
       return delay({ok:true});
     }
+    if(p[0]==='files'&&p.length===2&&method==='GET'){
+      const s=db.sites.find(x=>String(x.id)===p[1]);
+      if(!s)throw fail('App not found.');
+      if(!s.linked)throw fail('This app has no repository linked yet — link one first.');
+      const fs=mockFs(p[1]);
+      const entries=[],dirs=new Set();
+      for(const[fp,fb]of fs.files){
+        const segs=fp.split('/');
+        for(let i=1;i<segs.length;i++)dirs.add(segs.slice(0,i).join('/'));
+        entries.push({path:fp,type:'blob',size:atob(fb).length,sha:'sha-'+fp});
+      }
+      [...dirs].sort().forEach(d=>entries.push({path:d,type:'tree',size:0,sha:'tree-'+d}));
+      return delay({app:s.app,repo:(s.owner||'account')+'/'+(s.repo||''),branch:s.branch||'main',
+        truncated:false,entries,buildpack:fs.buildpack});
+    }
+    if(p[0]==='file'&&p.length===1&&method==='GET'){
+      const q=new URLSearchParams(path.split('?')[1]||'');
+      const fs=mockFs(String(q.get('app')));
+      const fb=fs.files.get(q.get('path'));
+      if(fb==null)throw fail('File not found.');
+      return delay({contentB64:fb,sha:'sha-'+q.get('path'),size:atob(fb).length});
+    }
+    if(p[0]==='files'&&p.length===2&&method==='POST'){
+      const s=db.sites.find(x=>String(x.id)===p[1]);
+      const fs=mockFs(p[1]);
+      let removed=0;
+      for(const r of(body.remove||[])){
+        const key=String(r).replace(/\/+$/,'');
+        if(fs.files.has(key)){fs.files.delete(key);removed++;}
+        else for(const k of[...fs.files.keys()])if(k.startsWith(key+'/')){fs.files.delete(k);removed++;}
+      }
+      for(const f of(body.files||[]))fs.files.set(f.path,String(f.contentB64||'').replace(/\s+/g,''));
+      const nWrote=(body.files||[]).length;
+      log('files',s?s.label:'app',
+        (nWrote?nWrote+' file'+(nWrote===1?'':'s')+' written':'')
+        +(nWrote&&removed?', ':'')
+        +(removed?removed+' removed':''));
+      return delay({ok:true,commitSha:'c'+(++seq),changed:nWrote,removed});
+    }
+    if(path==='/api/makedeployable'&&method==='POST'){
+      const s=db.sites.find(x=>String(x.id)===String(body.app_id));
+      if(!s)throw fail('App not found.');
+      const fs=mockFs(String(body.app_id));
+      if(fs.buildpack)return delay({ok:true,already:fs.buildpack});
+      fs.files.set('index.php',b64('<?php\n// Serves the existing static site so Heroku has an app to build.\ninclude __DIR__."/public/index.html";\n'));
+      fs.buildpack='php';
+      log('makedeployable',s.label,'index.php added — builds as PHP');
+      return delay({ok:true,added:'index.php'});
+    }
     throw fail('Unknown route: '+path);
   }
   return{handle,restore:(u,r)=>{db.me={username:u,role:r};}};
@@ -1290,7 +1546,7 @@ function leave(callApi){
   clearTimeout(S.pollT);
   ['dp_session','dp_role','dp_user'].forEach(k=>sessionStorage.removeItem(k));
   Object.assign(S,{session:null,role:null,user:null,state:null,batch:null,file:null,
-    selected:new Set(),repos:null,editing:null,armed:null,undoAsk:null});
+    selected:new Set(),repos:null,editing:null,armed:null,undoAsk:null,fv:null,bp:{}});
   showAuth();
 }
 async function refreshState(){
@@ -1333,16 +1589,22 @@ $('#signOut').addEventListener('click',()=>leave(true));
    owner-only, and that is enforced where it renders.
    ====================================================================== */
 function showView(v){
+  if(S.view==='files'&&v!=='files'&&fvDirty()){
+    if(!window.confirm('You have unsaved changes in the editor. Leave without saving?'))return;
+    S.fv.dirty=false; /* confirmed: the edit is abandoned */
+  }
   S.view=v;
   $$('.nav-item').forEach(b=>{
     if(b.dataset.view===v)b.setAttribute('aria-current','page');
     else b.removeAttribute('aria-current');
   });
   $('#view-deploy').hidden=v!=='deploy';
+  $('#view-files').hidden=v!=='files';
   $('#view-log').hidden=v!=='log';
   $('#view-kb').hidden=v!=='kb';
   $('#view-settings').hidden=v!=='settings';
   if(v==='deploy')renderDeploy();
+  if(v==='files')renderFiles();
   if(v==='log')renderLog();
   if(v==='kb')renderKB();
   if(v==='settings')renderSettings();
@@ -1370,6 +1632,27 @@ $('#deployNotice').addEventListener('click',e=>{
   if(e.target.closest('[data-act="go-accounts"]')){S.tab='accounts';showView('settings');}
 });
 
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }
+  catch(e){
+    /* clipboard API needs a secure context; fall back so it still works */
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      const ok=document.execCommand('copy'); ta.remove(); return ok;
+    }catch(e2){ return false; }
+  }
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-copy]'); if(!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const ok=await copyText(b.dataset.copy);
+  if(ok){ b.classList.add('copied'); toast('Address copied.','ok');
+          setTimeout(()=>b.classList.remove('copied'),1200); }
+  else toast('Could not copy — select the address and copy it by hand.','err');
+},true);
+
 function renderSites(){
   const grid=$('#siteGrid'),sites=S.state.sites;
   if(!sites.length){
@@ -1386,22 +1669,24 @@ function renderSites(){
       <span class="cbox" aria-hidden="true">${ic('check','ic ic-s')}</span>
       <span class="sc-body">
         <span class="sc-domain">${esc(s.app||s.label)}</span>
-        <span class="sc-url">${addr}</span>
+        <button type="button" class="sc-url copyurl" data-copy="${esc(s.app_url||s.url)}" title="Click to copy this address"><span class="copytxt">${addr}</span>${ic('copy','ic ic-s copyic')}</button>
         <span class="sc-chips"><span class="sc-need">${ic('alert','ic ic-s')}Needs a repository</span></span>
         <button type="button" class="btn btn-secondary btn-sm sc-fix" data-act="pick-repo" data-id="${id}">${ic('link','ic ic-s')}Choose a repository</button>
       </span>
     </div>`;
+    const bp=('buildpack' in s)?s.buildpack:S.bp[String(s.id)];
     return `
     <label class="site-card">
       <input type="checkbox" class="vh" value="${id}" ${S.selected.has(String(s.id))?'checked':''} aria-label="Update ${esc(s.app||s.label)}">
       <span class="cbox" aria-hidden="true">${ic('check','ic ic-s')}</span>
       <span class="sc-body">
         <span class="sc-domain">${esc(s.app||s.label)}</span>
-        <span class="sc-url">${addr}</span>
+        <button type="button" class="sc-url copyurl" data-copy="${esc(s.app_url||s.url)}" title="Click to copy this address"><span class="copytxt">${addr}</span>${ic('copy','ic ic-s copyic')}</button>
         <span class="sc-chips">
           <span class="chip">${ic('branch','ic ic-s')}${esc(s.owner)}/${esc(s.repo)}</span>
-          <span class="chip">${ic('folder','ic ic-s')}${esc(s.dir)}</span>
+          <button type="button" class="chip chipbtn" data-act="open-files" data-id="${id}" title="Open the files of this app" aria-label="Open the files of ${esc(s.app||s.label)}">${ic('folder','ic ic-s')}${esc(s.dir)}</button>
         </span>
+        ${bp===null?`<span class="sc-bp">${ic('alert','ic ic-s')}<span>Heroku cannot build this app yet — it only sees web pages, not an application. Open the folder to fix it.</span></span>`:''}
       </span>
     </label>`;}).join('');
   updateSelUI();
@@ -1412,6 +1697,8 @@ $('#siteGrid').addEventListener('change',e=>{
   updateSelUI();
 });
 $('#siteGrid').addEventListener('click',e=>{
+  const fb=e.target.closest('[data-act="open-files"]');
+  if(fb){e.preventDefault();openFiles(fb.dataset.id);return;}
   const b=e.target.closest('[data-act="pick-repo"]');if(!b)return;
   openRepoPicker(b.dataset.id);
 });
@@ -1649,6 +1936,7 @@ function renderActivity(){
       <div class="batch${b.done&&c.failed?' attn':''}">
         <div class="batch-head">
           <span class="batch-file">${esc(b.file)}</span>
+          ${b.targets&&b.targets.length?`<span class="batch-where">to ${esc(b.targets.map(t=>t.label).join(', '))}</span>`:''}
           <span class="batch-when">${ago(b.at)}</span>
         </div>
         ${b.undone?`<p class="undone-note">${ic('undo','ic ic-s')}This update was undone — the previous version is back.</p>`:''}
@@ -1676,6 +1964,7 @@ function renderActivity(){
         ${ic('clock')}
         <div class="r-main">
           <span class="r-file">${esc(r.file)}</span>
+          ${r.targets?`<span class="r-where">${ic('send','ic ic-s')}<span title="${esc(r.targets)}">${esc(r.targets)}</span></span>`:''}
           <span class="r-meta">${esc(r.who)} · ${ago(r.at)} · ${r.sites} app${r.sites>1?'s':''}</span>
         </div>
         <span class="r-res">${r.failed?`<span class="c-err">${r.failed} failed</span> · `:''}<span class="c-ok">${r.ok} ok</span>${(r.undone||S.undoneRecent.has(r.id))?' · <span class="c-saved">undone</span>':''}</span>
@@ -1703,6 +1992,553 @@ $('#activityBody').addEventListener('click',async e=>{
     }catch(ex){toast(ex.message,'err');renderActivity();}
   }
 });
+
+/* ======================================================================
+   FILES — browse and edit an app's repository, GitHub-style.
+   Only function definitions live here; nothing runs at boot. The editor
+   itself (tokeniser included) is built the first time a text file opens.
+   ====================================================================== */
+const BIN_EXT=new Set(['png','jpg','jpeg','gif','webp','ico','bmp','avif','pdf','zip','gz','tar','rar','7z','woff','woff2','ttf','otf','eot','mp3','mp4','mov','webm','wav','exe','bin','jar','dat']);
+const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','ico','bmp','avif']);
+const IMG_MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',ico:'image/x-icon',bmp:'image/bmp',avif:'image/avif'};
+const BP_NAME={php:'PHP',nodejs:'Node.js',python:'Python',ruby:'Ruby',go:'Go',java:'Java',rust:'Rust','static':'a static site'};
+const extOf=p=>{const m=/\.([A-Za-z0-9]+)$/.exec(p);return m?m[1].toLowerCase():'';};
+const parentOf=p=>{const i=p.lastIndexOf('/');return i<0?'':p.slice(0,i);};
+function b64encode(str){
+  const u=new TextEncoder().encode(str);let s='';
+  for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
+  return btoa(s);
+}
+function b64decode(b){
+  const s=atob(b);const u=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);
+  return new TextDecoder().decode(u);
+}
+function bufToB64(buf){
+  const u=new Uint8Array(buf);let s='';
+  for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
+  return btoa(s);
+}
+function fvDirty(){return!!(S.fv&&S.fv.dirty);}
+function fvGuard(){return!fvDirty()||window.confirm('You have unsaved changes in the editor. Leave without saving?');}
+
+function openFiles(appId){
+  if(!fvGuard())return;
+  S.fv={appId:String(appId),loading:true,error:null,cwd:'',open:null,dirty:false,
+    fileData:null,openDirs:new Set(),armed:null};
+  showView('files');
+}
+
+function renderFiles(){
+  const tools=$('#fvTools'),grid=$('#fvGrid'),pick=$('#fvPick'),banner=$('#fvBanner');
+  if(!S.fv){ /* no app open yet — offer the linked apps */
+    tools.hidden=true;grid.hidden=true;banner.innerHTML='';
+    const linked=((S.state&&S.state.sites)||[]).filter(s=>s.linked);
+    pick.innerHTML=linked.length?`
+      <section class="panel"><h2 class="panel-title">${ic('folder')}Pick an app</h2>
+      <p class="p-dim mt-4">Open the repository files of one of your apps. The folder chip on each Deploy card comes straight here too.</p>
+      <div class="site-grid mt-4">${linked.map(s=>`
+        <button type="button" class="site-card" data-open-files="${esc(String(s.id))}">
+          <span class="sc-body">
+            <span class="sc-domain">${esc(s.app||s.label)}</span>
+            <span class="sc-repo">${ic('branch','ic ic-s')}${esc(s.owner)}/${esc(s.repo)}</span>
+          </span>
+        </button>`).join('')}</div></section>`
+      :'<p class="empty">No apps with a repository yet — pair your accounts and link a repository first, then the files open from here.</p>';
+    return;
+  }
+  pick.innerHTML='';
+  if(S.fv.loading){
+    tools.hidden=true;grid.hidden=true;
+    banner.innerHTML='<p class="empty"><span class="spin spin-s"></span> Reading the repository&hellip;</p>';
+    fvLoadTree();
+    return;
+  }
+  if(S.fv.error){
+    tools.hidden=true;grid.hidden=true;
+    banner.innerHTML='<p class="empty">Could not read the repository — '+esc(S.fv.error)+'</p>';
+    return;
+  }
+  tools.hidden=false;grid.hidden=false;
+  const bp=S.fv.buildpack;
+  banner.innerHTML=bp===null?`
+    <div class="bp-banner">${ic('alert')}
+      <span><strong>Heroku cannot build this app yet — it only sees web pages, not an application.</strong>
+        <span class="bp-sub">Make it deployable adds one small index.php that serves your existing index.html. Your pages are not touched.</span></span>
+      <button type="button" class="btn btn-primary btn-sm" id="fvMakeDep">Make it deployable</button>
+    </div>`:'';
+  $('#fvRepoLine').innerHTML=
+    `<span class="chip">${ic('branch','ic ic-s')}${esc(S.fv.repo)}</span>`
+    +`<span class="chip">${esc(S.fv.branch)}</span>`
+    +(bp?`<span class="bp-quiet">${ic('check','ic ic-s')}Heroku will build this as ${esc(BP_NAME[bp]||bp)}</span>`:'')
+    +(S.fv.truncated?'<span class="p-dim">Large repository — the list may be incomplete.</span>':'');
+  $('#fvTree').innerHTML=fvTreeHTML(fvRoot(),'');
+  renderFilePane();
+}
+
+async function fvLoadTree(){
+  if(S.fv.fetching)return;
+  S.fv.fetching=true;
+  const id=S.fv.appId;
+  try{
+    const r=await api('/api/files/'+encodeURIComponent(id));
+    if(!S.fv||S.fv.appId!==id)return;
+    S.fv.fetching=false;
+    Object.assign(S.fv,{loading:false,error:null,app:r.app,repo:r.repo,branch:r.branch,
+      truncated:!!r.truncated,entries:(r.entries||[]).slice(),
+      buildpack:r.buildpack===undefined?null:r.buildpack});
+    S.bp[id]=S.fv.buildpack;
+    /* drop selections that no longer exist */
+    if(S.fv.open&&!S.fv.entries.some(e=>e.type==='blob'&&e.path===S.fv.open)){S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;}
+    if(S.view==='files')renderFiles();
+  }catch(ex){
+    if(!S.fv||S.fv.appId!==id)return;
+    S.fv.fetching=false;S.fv.loading=false;S.fv.error=ex.message;
+    if(S.view==='files')renderFiles();
+  }
+}
+
+/* fold the flat entry list into nested folders */
+function fvRoot(){
+  const root={dirs:new Map(),files:[]};
+  const dirNode=path=>{
+    let n=root;
+    if(!path)return n;
+    for(const part of path.split('/')){
+      if(!n.dirs.has(part))n.dirs.set(part,{dirs:new Map(),files:[]});
+      n=n.dirs.get(part);
+    }
+    return n;
+  };
+  for(const e of S.fv.entries){
+    if(e.type==='tree'){dirNode(e.path);continue;}
+    const i=e.path.lastIndexOf('/');
+    dirNode(i<0?'':e.path.slice(0,i)).files.push({name:i<0?e.path:e.path.slice(i+1),path:e.path,size:e.size||0});
+  }
+  return root;
+}
+function fvTreeHTML(node,prefix){
+  const dirs=[...node.dirs.keys()].sort((a,b)=>a.localeCompare(b));
+  const files=node.files.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  let h='<ul class="tree-kids">';
+  for(const d of dirs){
+    const p=prefix?prefix+'/'+d:d;
+    const open=S.fv.openDirs.has(p);
+    h+=`<li class="tdir${open?' open':''}">
+      <button type="button" class="tree-row" data-dir="${esc(p)}" aria-expanded="${open}" aria-current="${S.fv.cwd===p&&!S.fv.open?'true':'false'}">
+        <svg class="tree-chev" aria-hidden="true"><use href="#i-chev"/></svg>
+        ${ic('folder','ic ic-s')}<span class="tname">${esc(d)}</span></button>
+      ${open?fvTreeHTML(node.dirs.get(d),p):''}</li>`;
+  }
+  for(const f of files){
+    h+=`<li><button type="button" class="tree-row" data-file="${esc(f.path)}" aria-current="${S.fv.open===f.path?'true':'false'}">
+      <svg class="tree-chev" aria-hidden="true"></svg>
+      ${ic(BIN_EXT.has(extOf(f.name))?(IMG_EXT.has(extOf(f.name))?'image':'file'):'file','ic ic-s')}<span class="tname">${esc(f.name)}</span>
+      <span class="tree-size">${fmtBytes(f.size)}</span></button></li>`;
+  }
+  return h+'</ul>';
+}
+function fvNodeAt(path){
+  let n=fvRoot();
+  if(!path)return n;
+  for(const part of path.split('/')){n=n.dirs.get(part);if(!n)return null;}
+  return n;
+}
+function filesUnder(dir){
+  return S.fv.entries.filter(e=>e.type==='blob'&&(dir===''||e.path.startsWith(dir+'/')));
+}
+function fvAddEntry(path,size){
+  const i=S.fv.entries.findIndex(e=>e.type==='blob'&&e.path===path);
+  if(i>=0)S.fv.entries[i]={...S.fv.entries[i],size};
+  else S.fv.entries.push({path,type:'blob',size,sha:null});
+}
+function fvRemoveUnder(prefix){
+  S.fv.entries=S.fv.entries.filter(e=>e.path!==prefix&&!e.path.startsWith(prefix+'/'));
+}
+function fvOpenParents(path){
+  if(!path)return;
+  const segs=path.split('/');let p='';
+  for(const sg of segs){p=p?p+'/'+sg:sg;S.fv.openDirs.add(p);}
+}
+
+function fvCrumbHTML(){
+  const base=S.fv.open!=null?S.fv.open:S.fv.cwd;
+  let h='<nav class="fv-crumb" aria-label="Where you are"><button type="button" data-crumb="">'+esc(S.fv.app||S.fv.repo||'root')+'</button>';
+  if(base){
+    const segs=base.split('/');let p='';
+    segs.forEach((sgt,i)=>{
+      p=p?p+'/'+sgt:sgt;
+      const last=i===segs.length-1;
+      h+='<span class="sep" aria-hidden="true">/</span>'+(last
+        ?'<span class="cur">'+esc(sgt)+'</span>'
+        :'<button type="button" data-crumb="'+esc(p)+'">'+esc(sgt)+'</button>');
+    });
+  }
+  return h+'</nav>';
+}
+
+function renderFilePane(){
+  const head=$('#fvPaneHead'),body=$('#fvPaneBody');
+  if(S.fv.open==null){ /* browsing a folder */
+    const dir=S.fv.cwd,inside=filesUnder(dir),node=fvNodeAt(dir);
+    head.innerHTML=fvCrumbHTML()+`
+      <div class="fv-pane-actions">
+        ${dir?`<button type="button" class="btn btn-danger btn-sm" data-fv="deldir">${ic('trash','ic ic-s')}${S.fv.armed==='deldir'
+          ?'Press again to delete '+inside.length+' file'+(inside.length===1?'':'s')
+          :'Delete folder'}</button>`:''}
+      </div>`;
+    let rows='';
+    if(node){
+      const dirs=[...node.dirs.keys()].sort((a,b)=>a.localeCompare(b));
+      const files=node.files.slice().sort((a,b)=>a.name.localeCompare(b.name));
+      rows=dirs.map(d=>{
+        const p=dir?dir+'/'+d:d;
+        return `<div class="rrow" data-godir="${esc(p)}">${ic('folder')}<div class="r-main"><span class="r-file">${esc(d)}/</span><span class="r-meta">${filesUnder(p).length} file${filesUnder(p).length===1?'':'s'}</span></div></div>`;
+      }).join('')+files.map(f=>
+        `<div class="rrow" data-gofile="${esc(f.path)}">${ic(IMG_EXT.has(extOf(f.name))?'image':'file')}<div class="r-main"><span class="r-file">${esc(f.name)}</span></div><span class="r-res">${fmtBytes(f.size)}</span></div>`
+      ).join('');
+    }
+    body.innerHTML=`
+      <p class="fv-note">${inside.length} file${inside.length===1?'':'s'} ${dir?'in this folder and below':'in this repository'}. New files, new folders and uploads land here.</p>
+      <div class="fv-list">${rows||'<p class="empty">This folder is empty.</p>'}</div>`;
+    return;
+  }
+  /* a file is open */
+  const path=S.fv.open,name=path.split('/').pop(),ex=extOf(name),d=S.fv.fileData;
+  const isBin=BIN_EXT.has(ex);
+  head.innerHTML=fvCrumbHTML()+`
+    <div class="fv-pane-actions">
+      <span class="p-dim" id="fvSize">${d?fmtBytes(d.size):''}</span>
+      ${!isBin&&d?`<button type="button" class="btn btn-primary btn-sm" data-fv="save" id="fvSave" ${S.fv.dirty?'':'disabled'}>${ic('save','ic ic-s')}Save</button>`:''}
+      ${d?`<button type="button" class="btn btn-ghost btn-sm" data-fv="rename">${ic('edit','ic ic-s')}Rename</button>`:''}
+      <button type="button" class="btn btn-danger btn-sm" data-fv="delfile">${ic('trash','ic ic-s')}${S.fv.armed==='delfile'?'Press again to delete':'Delete'}</button>
+    </div>`;
+  if(!d){body.innerHTML='<p class="empty"><span class="spin spin-s"></span> Opening&hellip;</p>';return;}
+  const clean=String(d.contentB64||'').replace(/\s+/g,'');
+  if(isBin){
+    body.innerHTML=`
+      <p class="fv-note">This is not a text file, so it does not open in the editor.</p>
+      ${IMG_EXT.has(ex)&&clean?`<img class="fv-img" alt="${esc(name)}" src="data:${IMG_MIME[ex]||'application/octet-stream'};base64,${clean}">`:''}`;
+    return;
+  }
+  let text;
+  try{text=b64decode(clean);}
+  catch(e2){body.innerHTML='<p class="fv-note">This file could not be read as text.</p>';return;}
+  const plain=d.size>300*1024||/[^\n]{3000,}/.test(text);
+  mountEditor(body,text,ex,plain);
+}
+
+/* ---- the editor: hand-written, created only when a text file opens ---- */
+let edBooted=false,EDLANGS=null;
+function edLang(ext){
+  if(!EDLANGS){
+    const jsKw='\\b(?:function|return|if|else|for|while|do|switch|case|break|continue|new|delete|typeof|instanceof|in|of|var|let|const|class|extends|super|this|null|undefined|true|false|try|catch|finally|throw|async|await|yield|import|export|from|default)\\b';
+    const phpKw='<\\?php|<\\?=|\\?>|\\b(?:function|return|if|else|elseif|endif|foreach|endforeach|for|while|do|switch|case|break|continue|new|class|extends|implements|public|private|protected|static|echo|print|require|require_once|include|include_once|namespace|use|null|true|false|try|catch|finally|throw|array|isset|empty|unset|global|const|abstract|final|interface|trait|match|fn|as)\\b';
+    const defs={
+      js:{c:'\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/',s:'"(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\'|`(?:[^`\\\\]|\\\\[\\s\\S])*`',n:'\\b0x[0-9a-fA-F]+\\b|\\b\\d[\\d_]*(?:\\.\\d+)?(?:e[+-]?\\d+)?\\b',k:jsKw},
+      json:{s:'"(?:[^"\\\\\\n]|\\\\.)*"',n:'-?\\b\\d+(?:\\.\\d+)?(?:e[+-]?\\d+)?\\b',k:'\\b(?:true|false|null)\\b'},
+      css:{c:'\\/\\*[\\s\\S]*?\\*\\/',s:'"(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\'',n:'#[0-9a-fA-F]{3,8}\\b|\\b\\d+(?:\\.\\d+)?(?:px|em|rem|vh|vw|vmin|vmax|%|s|ms|fr|ch|ex|deg|turn)?\\b',k:'@[a-zA-Z-]+|!important|\\b(?:inherit|initial|unset|auto|none)\\b'},
+      html:{c:'<!--[\\s\\S]*?-->',t:'<\\/?[a-zA-Z][a-zA-Z0-9-]*|\\/?>|<![a-zA-Z][^>]*>',a:'\\b[a-zA-Z-]+(?==)',s:'"[^"]*"|\'[^\']*\''},
+      xml:{c:'<!--[\\s\\S]*?-->',t:'<\\/?[a-zA-Z][a-zA-Z0-9:_-]*|\\/?>|<\\?[^?]*\\?>|<![a-zA-Z][^>]*>',a:'\\b[a-zA-Z_:][a-zA-Z0-9_.:-]*(?==)',s:'"[^"]*"|\'[^\']*\''},
+      php:{c:'\\/\\/[^\\n]*|#[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/|<!--[\\s\\S]*?-->',s:'"(?:[^"\\\\]|\\\\[\\s\\S])*"|\'(?:[^\'\\\\]|\\\\[\\s\\S])*\'',v:'\\$[a-zA-Z_][a-zA-Z0-9_]*',n:'\\b\\d+(?:\\.\\d+)?\\b',k:phpKw,t:'<\\/?[a-zA-Z][a-zA-Z0-9-]*|\\/?>'},
+      md:{h:'^#{1,6}[^\\n]*',c:'```[\\s\\S]*?```|`[^`\\n]*`',s:'\\*\\*[^*\\n]+\\*\\*|\\*[^*\\n]+\\*|_[^_\\n]+_',k:'!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\)'},
+      gen:{c:'#[^\\n]*|\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/',s:'"(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\'',n:'\\b\\d+(?:\\.\\d+)?\\b'}
+    };
+    EDLANGS={};
+    for(const k in defs){
+      const dfn=defs[k],order=['c','s','v','h','t','a','n','k'],parts=[],names=[];
+      for(const key of order)if(dfn[key]){parts.push('('+dfn[key]+')');names.push(key);}
+      EDLANGS[k]={re:new RegExp(parts.join('|'),'gm'),names};
+    }
+  }
+  const map={html:'html',htm:'html',php:'php',css:'css',js:'js',mjs:'js',cjs:'js',jsx:'js',ts:'js',tsx:'js',json:'json',xml:'xml',svg:'xml',md:'md',markdown:'md'};
+  if(map[ext])return EDLANGS[map[ext]];
+  if(ext==='txt'||ext==='log'||ext==='')return null;
+  return EDLANGS.gen;
+}
+function edHighlight(text,lang){
+  let out='',last=0,m;
+  lang.re.lastIndex=0;
+  while((m=lang.re.exec(text))){
+    out+=esc(text.slice(last,m.index));
+    let cls='c';
+    for(let i=0;i<lang.names.length;i++)if(m[i+1]!==undefined){cls=lang.names[i];break;}
+    out+='<span class="tk-'+cls+'">'+esc(m[0])+'</span>';
+    last=m.index+m[0].length;
+    if(m[0].length===0)lang.re.lastIndex++;
+  }
+  return out+esc(text.slice(last));
+}
+function mountEditor(body,text,ext,plain){
+  body.innerHTML=`
+    <div class="ed${plain?' plain':''}">
+      <div class="ed-gut" aria-hidden="true"><div id="edGut"></div></div>
+      <div class="ed-body">
+        <pre class="ed-hl" id="edPre" aria-hidden="true"><code id="edCode"></code></pre>
+        <textarea class="ed-ta" id="edTa" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="File contents"></textarea>
+      </div>
+    </div>
+    ${plain?'<p class="fv-note">Large file, or a very long single line — opened as plain text with highlighting off so it stays fast.</p>':''}`;
+  const ta=$('#edTa'),pre=$('#edPre'),gut=$('#edGut'),codeEl=$('#edCode');
+  ta.value=text;
+  if(!edBooted){
+    edBooted=true;
+    window.addEventListener('beforeunload',ev=>{if(fvDirty()){ev.preventDefault();ev.returnValue='';}});
+  }
+  const lang=plain?null:edLang(ext);
+  let lines=-1,t=null;
+  const paint=()=>{
+    const v=ta.value,n=v.split('\n').length;
+    if(n!==lines){lines=n;let g='';for(let i=1;i<=n;i++)g+=(i>1?'\n':'')+i;gut.textContent=g;}
+    if(lang)codeEl.innerHTML=edHighlight(v,lang);
+  };
+  const sync=()=>{
+    pre.style.transform='translate('+(-ta.scrollLeft)+'px,'+(-ta.scrollTop)+'px)';
+    gut.style.transform='translateY('+(-ta.scrollTop)+'px)';
+  };
+  ta.addEventListener('input',()=>{
+    if(!S.fv.dirty){S.fv.dirty=true;const sb=$('#fvSave');if(sb)sb.disabled=false;}
+    clearTimeout(t);t=setTimeout(paint,120);
+  });
+  ta.addEventListener('scroll',sync);
+  ta.addEventListener('keydown',e=>{
+    if(e.key==='Tab'&&!e.shiftKey){
+      e.preventDefault();
+      ta.setRangeText('  ',ta.selectionStart,ta.selectionEnd,'end');
+      ta.dispatchEvent(new Event('input'));
+    }
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();fvSaveOpen();}
+  });
+  paint();sync();
+}
+
+async function fvSaveOpen(){
+  if(!S.fv||S.fv.open==null||!S.fv.dirty)return;
+  const ta=$('#edTa');if(!ta)return;
+  const path=S.fv.open,name=path.split('/').pop(),btn=$('#fvSave');
+  if(btn){btn.setAttribute('aria-busy','true');btn.innerHTML='<span class="spin spin-s"></span>Saving&hellip;';}
+  try{
+    const b64=b64encode(ta.value);
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Edit '+name,files:[{path,contentB64:b64}]}});
+    const size=new TextEncoder().encode(ta.value).length;
+    S.fv.dirty=false;
+    S.fv.fileData={...S.fv.fileData,contentB64:b64,size};
+    fvAddEntry(path,size);
+    $('#fvTree').innerHTML=fvTreeHTML(fvRoot(),'');
+    const sz=$('#fvSize');if(sz)sz.textContent=fmtBytes(size);
+    if(btn){btn.removeAttribute('aria-busy');btn.innerHTML=ic('save','ic ic-s')+'Save';btn.disabled=true;}
+    toast('Saved — '+name+' committed to '+S.fv.repo+'.','ok');
+    announce('File saved.');
+  }catch(ex){
+    if(btn){btn.removeAttribute('aria-busy');btn.innerHTML=ic('save','ic ic-s')+'Save';btn.disabled=false;}
+    toast(ex.message,'err');
+  }
+}
+
+async function fvOpenFile(path){
+  if(!fvGuard())return;
+  S.fv.open=path;S.fv.cwd=parentOf(path);S.fv.dirty=false;S.fv.fileData=null;S.fv.armed=null;
+  if(parentOf(path))fvOpenParents(parentOf(path));
+  $('#fvTree').innerHTML=fvTreeHTML(fvRoot(),'');
+  renderFilePane();
+  try{
+    const r=await api('/api/file?app='+encodeURIComponent(S.fv.appId)+'&path='+encodeURIComponent(path));
+    if(!S.fv||S.fv.open!==path)return;
+    S.fv.fileData=r;
+    renderFilePane();
+  }catch(ex){
+    if(!S.fv||S.fv.open!==path)return;
+    S.fv.open=null;renderFiles();toast(ex.message,'err');
+  }
+}
+function fvBrowse(dir){
+  if(!fvGuard())return;
+  S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;
+  S.fv.cwd=dir;
+  if(dir)fvOpenParents(dir);
+  renderFiles();
+}
+
+function fvCheckName(v){
+  const name=String(v||'').trim().replace(/^\/+|\/+$/g,'');
+  if(!name)throw new Error('Type a name.');
+  if(/[\\:*?"<>|]/.test(name)||/\s\/|\/\s|\/\//.test(name)||name.split('/').some(sg=>!sg||sg==='..'))
+    throw new Error('That name cannot be used — no \\ : * ? " < > | characters, and no ".." parts.');
+  return name;
+}
+function fvPrompt(title,label,def,cb){
+  const dlg=$('#fvDlg');
+  dlg.innerHTML=`
+    <h2 class="panel-title">${ic('file')}${esc(title)}</h2>
+    <form id="fvDlgForm" class="form-col">
+      <label class="field"><span>${esc(label)}</span>
+        <input name="v" required value="${esc(def||'')}" autocomplete="off" spellcheck="false"></label>
+      <p class="form-err" id="fvDlgErr" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">OK</button>
+      </div>
+    </form>`;
+  dlg.querySelector('[data-close]').addEventListener('click',()=>dlg.close());
+  dlg.showModal();
+  const f=$('#fvDlgForm');
+  setTimeout(()=>f.v.select(),40);
+  f.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const err=$('#fvDlgErr'),sub=f.querySelector('button[type=submit]');
+    err.hidden=true;sub.setAttribute('aria-busy','true');
+    try{await cb(f.v.value);dlg.close();}
+    catch(ex){err.textContent=ex.message;err.hidden=false;}
+    finally{sub.removeAttribute('aria-busy');}
+  });
+}
+
+async function fvUpload(fileList,stripRoot){
+  if(!S.fv||S.fv.loading||S.fv.error)return;
+  const files=[...fileList];
+  if(!files.length)return;
+  announce('Uploading '+files.length+' file'+(files.length===1?'':'s')+'.');
+  const items=[];
+  for(const f of files){
+    let rel=stripRoot&&f.webkitRelativePath
+      ?f.webkitRelativePath.split('/').slice(1).join('/')
+      :f.name;
+    if(!rel)continue;
+    const buf=await f.arrayBuffer();
+    items.push({path:(S.fv.cwd?S.fv.cwd+'/':'')+rel,contentB64:bufToB64(buf),size:buf.byteLength});
+  }
+  if(!items.length)return;
+  try{
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{
+      message:'Upload '+items.length+' file'+(items.length===1?'':'s'),
+      files:items.map(it=>({path:it.path,contentB64:it.contentB64}))}});
+    items.forEach(it=>fvAddEntry(it.path,it.size));
+    if(S.fv.cwd)fvOpenParents(S.fv.cwd);
+    renderFiles();
+    toast('Uploaded '+items.length+' file'+(items.length===1?'':'s')+' as one change.','ok');
+  }catch(ex){toast(ex.message,'err');}
+}
+
+/* ---- files view: wiring (delegated, static elements) ---- */
+$('#fvTree').addEventListener('click',e=>{
+  const b=e.target.closest('.tree-row');if(!b)return;
+  if(b.dataset.file!==undefined){fvOpenFile(b.dataset.file);return;}
+  const p=b.dataset.dir;
+  if(!fvGuard())return;
+  if(S.fv.openDirs.has(p)&&S.fv.cwd===p&&S.fv.open==null)S.fv.openDirs.delete(p);
+  else S.fv.openDirs.add(p);
+  S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;S.fv.cwd=p;
+  renderFiles();
+});
+$('#fvPick').addEventListener('click',e=>{
+  const b=e.target.closest('[data-open-files]');if(!b)return;
+  openFiles(b.dataset.openFiles);
+});
+$('#fvBanner').addEventListener('click',async e=>{
+  const b=e.target.closest('#fvMakeDep');if(!b)return;
+  b.setAttribute('aria-busy','true');b.innerHTML='<span class="spin spin-s"></span>Working&hellip;';
+  try{
+    const r=await api('/api/makedeployable',{body:{app_id:S.fv.appId}});
+    toast(r.added?'Done — '+r.added+' was added; Heroku can build this app now.':'This app is already deployable.','ok');
+    S.fv.loading=true;renderFiles();
+  }catch(ex){
+    toast(ex.message,'err');
+    b.removeAttribute('aria-busy');b.textContent='Make it deployable';
+  }
+});
+$('#fvPaneHead').addEventListener('click',e=>{
+  const c=e.target.closest('[data-crumb]');
+  if(c){fvBrowse(c.dataset.crumb);return;}
+  const b=e.target.closest('[data-fv]');if(!b)return;
+  const act=b.dataset.fv;
+  if(act==='save'){fvSaveOpen();return;}
+  if(act==='rename'){
+    const old=S.fv.open,dir=parentOf(old);
+    fvPrompt('Rename','New name',old.split('/').pop(),async v=>{
+      const name=fvCheckName(v);
+      const np=(dir?dir+'/':'')+name;
+      if(np===old)return;
+      if(S.fv.entries.some(en=>en.type==='blob'&&en.path===np))throw new Error('A file with that name already exists.');
+      const content=String((S.fv.fileData&&S.fv.fileData.contentB64)||'').replace(/\s+/g,'');
+      await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{
+        message:'Rename '+old.split('/').pop()+' to '+name,
+        files:[{path:np,contentB64:content}],remove:[old]}});
+      const size=(S.fv.fileData&&S.fv.fileData.size)||0;
+      fvRemoveUnder(old);fvAddEntry(np,size);
+      S.fv.open=np;S.fv.cwd=parentOf(np);
+      renderFiles();
+      toast('Renamed to '+name+'.','ok');
+    });
+    return;
+  }
+  if(act==='delfile'){
+    if(S.fv.armed!=='delfile'){S.fv.armed='delfile';renderFilePane();return;}
+    const path=S.fv.open;
+    (async()=>{
+      try{
+        await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete '+path.split('/').pop(),remove:[path]}});
+        fvRemoveUnder(path);
+        S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;
+        renderFiles();
+        toast('Deleted '+path.split('/').pop()+'.','ok');
+      }catch(ex){S.fv.armed=null;renderFilePane();toast(ex.message,'err');}
+    })();
+    return;
+  }
+  if(act==='deldir'){
+    const dir=S.fv.cwd,inside=filesUnder(dir);
+    if(S.fv.armed!=='deldir'){S.fv.armed='deldir';renderFilePane();return;}
+    (async()=>{
+      try{
+        await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Delete folder '+dir,remove:[dir]}});
+        fvRemoveUnder(dir);
+        S.fv.openDirs.delete(dir);
+        S.fv.cwd=parentOf(dir);S.fv.armed=null;
+        renderFiles();
+        toast('Folder deleted — '+inside.length+' file'+(inside.length===1?'':'s')+' removed.','ok');
+      }catch(ex){S.fv.armed=null;renderFilePane();toast(ex.message,'err');}
+    })();
+  }
+});
+$('#fvPaneBody').addEventListener('click',e=>{
+  const d=e.target.closest('[data-godir]');
+  if(d){fvBrowse(d.dataset.godir);return;}
+  const f=e.target.closest('[data-gofile]');
+  if(f)fvOpenFile(f.dataset.gofile);
+});
+$('#fvNewFile').addEventListener('click',()=>{
+  if(!S.fv||S.fv.loading||S.fv.error)return;
+  fvPrompt('New file','File name (for example index.html)','',async v=>{
+    const name=fvCheckName(v);
+    const path=(S.fv.cwd?S.fv.cwd+'/':'')+name;
+    if(S.fv.entries.some(en=>en.type==='blob'&&en.path===path))throw new Error('That file already exists.');
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Create '+name,files:[{path,contentB64:''}]}});
+    fvAddEntry(path,0);
+    S.fv.open=path;S.fv.cwd=parentOf(path);S.fv.dirty=false;S.fv.armed=null;
+    S.fv.fileData={contentB64:'',size:0,sha:null};
+    if(parentOf(path))fvOpenParents(parentOf(path));
+    renderFiles();
+    toast('Created '+name+' — it is open in the editor.','ok');
+  });
+});
+$('#fvNewFolder').addEventListener('click',()=>{
+  if(!S.fv||S.fv.loading||S.fv.error)return;
+  fvPrompt('New folder','Folder name','',async v=>{
+    const name=fvCheckName(v);
+    const dir=(S.fv.cwd?S.fv.cwd+'/':'')+name;
+    const keep=dir+'/.gitkeep';
+    await api('/api/files/'+encodeURIComponent(S.fv.appId),{body:{message:'Create folder '+name,files:[{path:keep,contentB64:''}]}});
+    fvAddEntry(keep,0);
+    fvOpenParents(dir);
+    S.fv.open=null;S.fv.fileData=null;S.fv.dirty=false;S.fv.armed=null;S.fv.cwd=dir;
+    renderFiles();
+    toast('Folder created — a small placeholder file keeps it in the repository.','ok');
+  });
+});
+$('#fvUpFiles').addEventListener('click',()=>{if(S.fv&&!S.fv.loading&&!S.fv.error)$('#fvFileInput').click();});
+$('#fvUpFolder').addEventListener('click',()=>{if(S.fv&&!S.fv.loading&&!S.fv.error)$('#fvDirInput').click();});
+$('#fvFileInput').addEventListener('change',e=>{fvUpload(e.target.files,false);e.target.value='';});
+$('#fvDirInput').addEventListener('change',e=>{fvUpload(e.target.files,true);e.target.value='';});
 
 /* ======================================================================
    ACTIVITY LOG — GET /api/logs, rendered in India time, grouped by day.
@@ -1752,6 +2588,7 @@ const KB=[
   {id:'undo',t:'Undo a mistake',tpl:'kb-undo'},
   {id:'accounts',t:'Accounts and pairs',tpl:'kb-accounts'},
   {id:'apps',t:'Apps and repositories',tpl:'kb-apps'},
+  {id:'files',t:'Manage the files in a website',tpl:'kb-files'},
   {id:'create',t:'Create a repo or app',tpl:'kb-create'},
   {id:'log',t:'The activity log',tpl:'kb-log'},
   {id:'people',t:'Add your VA',tpl:'kb-people',owner:true},
