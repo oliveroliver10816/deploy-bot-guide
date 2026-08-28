@@ -5,10 +5,13 @@ The client rejected v1 for being "a mobile sized website" on a 34" monitor, so t
 measures how much of the viewport the interface actually uses at each width and
 fails anything that leaves the screen mostly empty.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, sys
 from playwright.async_api import async_playwright
 
-PAGE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+PAGE = sys.argv[1] if len(sys.argv) > 1 else mock_page()
 OUT  = sys.argv[2] if len(sys.argv) > 2 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad"
 SIZES = [("ultrawide", 3440, 1440), ("desktop", 1680, 1050), ("laptop", 1280, 800), ("phone", 390, 844)]
 
@@ -22,6 +25,9 @@ async def main():
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
             await pg.goto(f"file://{PAGE}")
+            # the sign-in form is rendered by script, so wait for it rather than
+            # racing it -- v10's mock answers slowly on purpose
+            await pg.wait_for_selector('#loginForm [name=username]', timeout=20000)
             await pg.fill('#loginForm [name=username]', "owner")
             await pg.fill('#loginForm [name=password]', "x")
             await pg.click("#loginBtn")

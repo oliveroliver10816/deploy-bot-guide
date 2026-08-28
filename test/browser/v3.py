@@ -4,10 +4,13 @@ Browser checks for the v3 panel — the eight changes Bob asked for on 2026-08-1
 Run against the MOCK build:
     python3 test/browser/v3.py [page.html] [outdir]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, re, sys
 from playwright.async_api import async_playwright
 
-PAGE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+PAGE = sys.argv[1] if len(sys.argv) > 1 else mock_page()
 OUT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad"
 
 fails = []
@@ -22,7 +25,14 @@ async def login(pg, user):
     await pg.fill('#loginForm [name=password]', "x")
     await pg.click("#loginBtn")
     await pg.wait_for_selector("#shell:not([hidden])", timeout=20000)
-    await pg.wait_for_timeout(700)
+    # ⚠ NOT a fixed sleep: the offline demo answers the big reads slowly ON PURPOSE
+    # so the loading states are visible, and 700ms lands before the app cards
+    # paint — which read as "an app with no repo is not called out" for months.
+    try:
+        await pg.wait_for_selector(".site-card", timeout=20000)
+    except Exception:
+        pass
+    await pg.wait_for_timeout(400)
 
 async def go(pg, view):
     el = await pg.query_selector(f"[data-view={view}]")
@@ -53,7 +63,7 @@ async def main():
               "no invented .com domains presented as the site name")
         needs = await pg.evaluate("""() => {
             const t=document.body.innerText.toLowerCase();
-            return {needsRepo: /needs a repos|needs a repo|no repository|link a repo/.test(t),
+            return {needsRepo: /needs a repo|no repo|link a repo/.test(t),
                     refresh: [...document.querySelectorAll('button')].some(b=>/refresh/i.test(b.textContent))};
         }""")
         check(needs["refresh"], "there is a Refresh-from-Heroku action")
@@ -90,15 +100,21 @@ async def main():
 
         # 3/4/6 — settings
         await go(pg, "settings")
-        tabs = await pg.query_selector_all(".tab")
-        names = [(await t.inner_text()).strip().lower() for t in tabs]
-        check(any("account" in n or "key" in n or "pair" in n for n in names), "settings has a keys/accounts tab", str(names))
-        for t in tabs:
+        names = await pg.evaluate("""() => [...document.querySelectorAll('.nav-item')]
+            .map(n => n.innerText.trim().toLowerCase())""")
+        check(any("account" in n or "key" in n for n in names),
+              "accounts and keys is on the rail", str(names))
+        # the tabs are rail entries now; walk them by address
+        for href in ("#/accounts", "#/apps", "#/new", "#/people"):
+            t = await pg.query_selector(f'.nav-item[href="{href}"]')
+            if not t:
+                continue
             await t.click(); await pg.wait_for_timeout(900)
             label = (await t.inner_text()).strip().lower()
-            if "creat" in label:
+            if "new site" in label or "creat" in label:
                 heights = await pg.evaluate("""() => {
-                    const c=[...document.querySelectorAll('#setBody .panel, #setBody .sub, #setBody section')]
+                    const v=[...document.querySelectorAll('.view')].find(x=>!x.hidden)||document;
+                    const c=[...v.querySelectorAll('.panel, .sub, section')]
                       .filter(e=>e.getBoundingClientRect().height>80);
                     const tops=[...new Set(c.map(e=>Math.round(e.getBoundingClientRect().top)))];
                     const row=c.filter(e=>Math.round(e.getBoundingClientRect().top)===tops[0]);
@@ -108,7 +124,9 @@ async def main():
                       "the two Create cards are equal height", str(heights))
                 await pg.screenshot(path=f"{OUT}/v3-create.png")
             if "people" in label or "user" in label:
-                txt = await pg.evaluate("() => (document.querySelector('#setBody')||{innerText:''}).innerText")
+                txt = await pg.evaluate("""() => {
+                    const v=[...document.querySelectorAll('.view')].find(x=>!x.hidden);
+                    return v ? v.innerText : ''; }""")
                 check("owner" in txt.lower(), "People shows the owner as Owner", txt[:80].replace("\n", " "))
                 check("master" not in txt.lower(), "the word 'master' is not shown to the user")
         masters = await pg.evaluate("""() => (document.documentElement.innerHTML.match(/'master'|\"master\"/g)||[]).length""")
@@ -129,14 +147,15 @@ async def main():
         if can_settings:
             txt = await pg2.evaluate("() => document.body.innerText.toLowerCase()")
             check("github" in txt or "key" in txt, "the VA can reach the keys")
-            tabs2 = await pg2.evaluate("""() => [...document.querySelectorAll('.tab')]
-                .map(x => ({label: x.textContent.trim().toLowerCase(), shown: x.offsetParent !== null}))""")
+            tabs2 = await pg2.evaluate("""() => [...document.querySelectorAll('.nav-item')]
+                .map(x => ({label: x.innerText.trim().toLowerCase(), shown: !x.hidden}))""")
             shown = [t["label"] for t in tabs2 if t["shown"]]
             hidden = [t["label"] for t in tabs2 if not t["shown"]]
             check(all("people" not in l and "user" not in l for l in shown),
                   "the People section is hidden from the VA", str(shown))
-            check(len(shown) >= 3, "the VA still gets the rest of Settings", str(shown))
-            check(any("people" in l for l in hidden), "People exists but is hidden, not removed", str(hidden))
+            check(len(shown) >= 5, "the VA still gets the rest of the rail", str(shown))
+            check(any("people" in l for l in hidden),
+                  "People exists but is hidden, not removed", str(hidden))
         check(await go(pg2, "logs") or await go(pg2, "log") or await go(pg2, "activity"),
               "the VA can read the activity log")
         check(not verrs, "no console or page errors (VA)", str(verrs[:2]))

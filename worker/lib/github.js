@@ -47,6 +47,11 @@ export async function listRepos(token, f = fetch) {
     full_name: x.full_name,
     branch: x.default_branch || "main",
     private: !!x.private,
+    // Both arrive in this same response and were being discarded.
+    // ⚠️ pushed_at, NOT updated_at: updated_at moves when a description or a
+    // star changes, so it does not mean "the files changed".
+    created_at: x.created_at || null,
+    pushed_at: x.pushed_at || null,
   }));
 }
 
@@ -181,11 +186,41 @@ export async function createRepo(token, name, isPrivate = true, f = fetch) {
   return { owner: r.body.owner.login, repo: r.body.name, full_name: r.body.full_name, branch: r.body.default_branch || "main" };
 }
 
+/**
+ * Delete a repository — PERMANENT. Every file and the entire history are gone;
+ * GitHub cannot restore a deleted private repository for us.
+ *
+ * Needs `administration=write` on the token — measured from GitHub's own
+ * `x-accepted-github-permissions` response header on this endpoint. A token
+ * with only `contents=write` gets a 403 here, so the caller must translate
+ * that into a sentence naming the Administration permission, not Contents.
+ */
+export async function deleteRepo(token, owner, repo, f = fetch) {
+  const r = await gh(token, `/repos/${owner}/${repo}`, { method: "DELETE" }, f);
+  if (r.status === 204) return true;
+  if (!r.ok) throw new Error(`Could not delete the repository (HTTP ${r.status}): ${r.body?.message || ""}`);
+  return true;
+}
+
 // ---------------------------------------------------------------- git data API
 // One commit for many changes. The Contents API can only touch a single file per
 // call, which makes a folder upload N commits and a folder delete impossible.
 
 /** Full recursive tree at a ref, so a folder's contents can be found. */
+/**
+ * The branch's latest commit id, in ONE call.
+ *
+ * treeOf costs three calls (ref, commit, tree) and downloads every path in the
+ * repository. Almost every refresh finds nothing has changed, so asking this
+ * first and comparing turns three calls plus a full file listing into one small
+ * one for each unchanged app.
+ */
+export async function headSha(token, owner, repo, branch, f = fetch) {
+  const ref = await gh(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {}, f);
+  if (!ref.ok) throw new Error(`Could not read the branch (HTTP ${ref.status}): ${ref.body?.message || ""}`);
+  return ref.body.object.sha;
+}
+
 export async function treeOf(token, owner, repo, branch, f = fetch) {
   const ref = await gh(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {}, f);
   if (!ref.ok) throw new Error(`Could not read the branch (HTTP ${ref.status}): ${ref.body?.message || ""}`);
@@ -197,29 +232,56 @@ export async function treeOf(token, owner, repo, branch, f = fetch) {
   if (!tree.ok) throw new Error(`Could not read the file list (HTTP ${tree.status}).`);
   return {
     commitSha, treeSha,
+    // The commit object is ALREADY fetched above and its date was being thrown
+    // away. This is the branch's last commit — true of the repo, and NOT true of
+    // any individual file in it, so the panel labels it "last commit".
+    commitAt: commit.body.committer?.date || commit.body.author?.date || null,
     truncated: !!tree.body.truncated,
-    entries: (tree.body.tree || []).map((e) => ({ path: e.path, type: e.type, size: e.size || 0, sha: e.sha })),
+    // `mode` is carried so a rename can move a blob without changing its bits:
+    // an executable (100755) or a symlink (120000) silently becoming 100644
+    // would be a real, invisible corruption of the repository.
+    entries: (tree.body.tree || []).map((e) => ({
+      path: e.path, type: e.type, size: e.size || 0, sha: e.sha, mode: e.mode || "100644",
+    })),
   };
 }
 
 /**
- * Apply many additions and deletions as ONE commit.
- * `files`: [{path, contentB64}]  `remove`: [path, ...] (already expanded to files)
+ * Apply many additions, moves and deletions as ONE commit.
+ *
+ * `files`  : [{path, contentB64}]      content we are uploading now
+ * `blobs`  : [{path, sha, mode}]       content that ALREADY exists in the repo,
+ *                                      placed at a new path — this is how a
+ *                                      rename moves bytes without re-uploading
+ *                                      them, and how a folder rename stays one
+ *                                      commit however many files it holds.
+ * `remove` : [path, ...]               already expanded to individual blobs
+ *
+ * Paths are collapsed through a Map so the same path can never appear twice in
+ * one tree (GitHub's behaviour for a duplicate path is undefined). Precedence is
+ * deliberate — a delete beats a move, and freshly uploaded content beats both —
+ * which is what makes a swap (a -> b and b -> a in one request) come out right.
  */
-export async function commitChanges(token, { owner, repo, branch, message, files = [], remove = [] }, f = fetch) {
-  if (!files.length && !remove.length) throw new Error("Nothing to commit.");
+export async function commitChanges(
+  token, { owner, repo, branch, message, files = [], remove = [], blobs = [] }, f = fetch
+) {
+  if (!files.length && !remove.length && !blobs.length) throw new Error("Nothing to commit.");
   const base = await treeOf(token, owner, repo, branch, f);
 
-  const tree = [];
+  const byPath = new Map();
+  for (const b of blobs) {
+    byPath.set(b.path, { path: b.path, mode: b.mode || "100644", type: "blob", sha: b.sha });
+  }
+  // A null sha removes the path from the new tree.
+  for (const path of remove) byPath.set(path, { path, mode: "100644", type: "blob", sha: null });
   for (const file of files) {
     const blob = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
       method: "POST", body: JSON.stringify({ content: file.contentB64, encoding: "base64" }),
     }, f);
     if (!blob.ok) throw new Error(`Could not store ${file.path} (HTTP ${blob.status}): ${blob.body?.message || ""}`);
-    tree.push({ path: file.path, mode: "100644", type: "blob", sha: blob.body.sha });
+    byPath.set(file.path, { path: file.path, mode: "100644", type: "blob", sha: blob.body.sha });
   }
-  // A null sha removes the path from the new tree.
-  for (const path of remove) tree.push({ path, mode: "100644", type: "blob", sha: null });
+  const tree = [...byPath.values()];
 
   const newTree = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
     method: "POST", body: JSON.stringify({ base_tree: base.treeSha, tree }),
@@ -235,7 +297,7 @@ export async function commitChanges(token, { owner, repo, branch, message, files
     method: "PATCH", body: JSON.stringify({ sha: commit.body.sha }),
   }, f);
   if (!upd.ok) throw new Error(`Could not update the branch (HTTP ${upd.status}): ${upd.body?.message || ""}`);
-  return { commitSha: commit.body.sha, changed: files.length, removed: remove.length };
+  return { commitSha: commit.body.sha, changed: files.length, removed: remove.length, moved: blobs.length };
 }
 
 /** File contents as base64, by path. */

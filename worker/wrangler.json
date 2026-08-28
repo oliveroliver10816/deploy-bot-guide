@@ -6,13 +6,13 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "deploy_bot_us",
-      "database_id": "7e5e842c-55a8-46c3-9c4b-9872be787f34"
+      "database_name": "deploy_bot_apac",
+      "database_id": "6ba157a6-44a3-4747-afcd-d9e6b861dc7a"
     }
   ],
   "triggers": {
     "crons": [
-      "*/5 * * * *"
+      "*/2 * * * *"
     ]
   },
   "vars": {

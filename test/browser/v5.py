@@ -2,10 +2,13 @@
 The four defects an adversarial review found in v4. Each check reproduces the
 original failure, so a regression fails loudly.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, sys
 from playwright.async_api import async_playwright
 
-PAGE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+PAGE = sys.argv[1] if len(sys.argv) > 1 else mock_page()
 fails = []
 def ck(c, n, x=""):
     print(("  ok   " if c else "  FAIL ") + n + ((" [" + str(x) + "]") if x and not c else ""))
@@ -29,12 +32,21 @@ async def main():
         ck(warn >= 1, "the Deploy card warns about an unbuildable app on first sign-in", str(warn))
 
         # ---- 1. unsaved text survives another action (was silent data loss) ----
+        # wait for each thing to exist rather than guessing how long it takes:
+        # the mock answers slowly on purpose so the busy states are visible
         chip = await pg.query_selector('#siteGrid [data-act="open-files"]')
-        await chip.click(); await pg.wait_for_timeout(2500)
+        await chip.click()
+        await pg.wait_for_selector('[data-dir],[data-file]', timeout=20000)
         d = await pg.query_selector('[data-dir]')
-        if d: await d.click(); await pg.wait_for_timeout(700)
+        if d:
+            await d.click()
+            await pg.wait_for_selector('[data-file]', timeout=20000)
         f = await pg.query_selector('[data-file$=".html"]') or await pg.query_selector('[data-file]')
-        await f.click(); await pg.wait_for_timeout(1500)
+        await f.click()
+        try:
+            await pg.wait_for_selector("#edTa", timeout=20000)
+        except Exception:
+            pass
         ta = await pg.query_selector("#edTa")
         ck(bool(ta), "the editor opened")
         if ta:
@@ -67,12 +79,18 @@ async def main():
         # ---- 4. highlighting can be switched off ----
         pick = await pg.query_selector('[data-open-files]')
         if pick:
-            await pick.click(); await pg.wait_for_timeout(2200)
+            # wait for the thing, not for the clock: v8 shows deliberate loading
+            # states, so a fixed sleep here raced the tree and failed at random
+            await pick.click()
+            await pg.wait_for_selector('[data-dir],[data-file]', timeout=15000)
             d2 = await pg.query_selector('[data-dir]')
-            if d2: await d2.click(); await pg.wait_for_timeout(600)
+            if d2:
+                await d2.click()
+                await pg.wait_for_selector('[data-file]', timeout=15000)
             f2 = await pg.query_selector('[data-file$=".html"]') or await pg.query_selector('[data-file]')
             if f2:
-                await f2.click(); await pg.wait_for_timeout(1400)
+                await f2.click()
+                await pg.wait_for_selector('[data-fv="hl"], #fvPaneBody img', timeout=15000)
                 before = await pg.evaluate("() => document.querySelectorAll('#fvPaneBody span').length")
                 t = await pg.query_selector('[data-fv="hl"]')
                 ck(bool(t), "there is a colouring switch")

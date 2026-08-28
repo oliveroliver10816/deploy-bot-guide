@@ -1,6 +1,9 @@
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, sys
 from playwright.async_api import async_playwright
-P="/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+P=mock_page()
 O="/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad"
 fails=[]
 def ck(c,n,x=""):
@@ -35,7 +38,12 @@ async def main():
 
         # files view + buildpack banner + editor laziness
         # the app CARD chip, not the rail nav — the rail opens Files with no app picked
-        chip=await pg.query_selector('#siteGrid [data-act="open-files"]')
+        # v10 made every list newest-first, so position is no longer identity:
+        # pick the app the assertion is ABOUT (northgate-supply is the one with
+        # no buildpack), not whichever card happens to be first.
+        chip=await pg.query_selector(
+            '#siteGrid [data-act="open-files"][aria-label*="northgate-supply"]'
+        ) or await pg.query_selector('#siteGrid [data-act="open-files"]')
         ck(bool(chip), "the app card has a folder chip that opens its files")
         if chip:
             await chip.click(); await pg.wait_for_timeout(3000)
@@ -53,7 +61,13 @@ async def main():
             # open a text file -> the editor should appear only now
             f=await pg.query_selector('[data-file$=".html"]')
             if f:
-                await f.click(); await pg.wait_for_timeout(1500)
+                await f.click()
+                # wait for the editor itself; a fixed sleep races the fetch
+                try:
+                    await pg.wait_for_selector("#edTa", timeout=20000)
+                except Exception:
+                    pass
+                await pg.wait_for_timeout(400)
                 ed=await pg.evaluate("""() => ({
                     editor: !!document.querySelector('textarea, .ed'),
                     hl: document.querySelectorAll('.tok, .hl, pre span').length })""")

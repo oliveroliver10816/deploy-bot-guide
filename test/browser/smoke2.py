@@ -1,6 +1,15 @@
+
+# ⚠️ v1 selectors: this suite predates the v2 redesign. The login ids changed
+# (#lg-u/#lg-p/#lg-btn -> #loginForm [name=...] / #loginBtn) and it has been
+# crashing on the first fill ever since — it was never a green run, it was a
+# traceback nobody read. Selectors updated; anything else it asserts about the
+# v1 layout is superseded by wide.py / v2.py / v3.py / bounds.py.
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio
 from playwright.async_api import async_playwright
-D="/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview"
+D=_os.path.dirname(mock_page())
 async def main():
     errs=[]
     async with async_playwright() as p:
@@ -10,8 +19,8 @@ async def main():
         pg.on("pageerror", lambda e: errs.append(f"[master] {e}"))
         pg.on("console", lambda m: errs.append(f"[master] {m.text}") if m.type=="error" else None)
         await pg.goto(f"file://{D}/index.html")
-        await pg.fill("#lg-u","bob"); await pg.fill("#lg-p","x"); await pg.click("#lg-btn")
-        await pg.wait_for_selector("#scr-main:not([hidden])", timeout=15000)
+        await pg.fill("#loginForm [name=username]","owner"); await pg.fill("#loginForm [name=password]","x"); await pg.click("#loginBtn")
+        await pg.wait_for_selector("#shell:not([hidden])", timeout=15000)
         await pg.click("#btn-settings"); await pg.wait_for_timeout(500)
         for i,(tab,label) in enumerate([("tokens","Keys"),("sites","Websites"),("create","Create new"),("users","People")]):
             try:
@@ -26,8 +35,8 @@ async def main():
         pg2=await br.new_page(viewport={"width":390,"height":844})
         pg2.on("pageerror", lambda e: errs.append(f"[va] {e}"))
         await pg2.goto(f"file://{D}/index.html")
-        await pg2.fill("#lg-u","vera"); await pg2.fill("#lg-p","x"); await pg2.click("#lg-btn")
-        await pg2.wait_for_selector("#scr-main:not([hidden])", timeout=15000)
+        await pg2.fill("#loginForm [name=username]","maria"); await pg2.fill("#loginForm [name=password]","x"); await pg2.click("#loginBtn")
+        await pg2.wait_for_selector("#shell:not([hidden])", timeout=15000)
         vis = await pg2.evaluate("""() => {
             const b=document.querySelector('#btn-settings');
             const st=b?getComputedStyle(b):null;

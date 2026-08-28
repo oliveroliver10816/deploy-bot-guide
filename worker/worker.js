@@ -21,7 +21,8 @@ import { tg, send, edit, answerCb, deleteMsg, downloadFile, keyboard, esc } from
 import * as GH from "./lib/github.js";
 import * as HK from "./lib/heroku.js";
 import { toBase64, nowIso, humanSize, safeJoin, parentDir } from "./lib/util.js";
-import { handlePanel, corsHeaders, pollPanelBuilds, ensurePanelSchema } from "./lib/panel.js";
+import { handlePanel, corsHeaders, pollPanelBuilds, ensurePanelSchema, refreshCombos,
+         explainVendorError } from "./lib/panel.js";
 
 // Worker memory guard. A 20 MB upload also costs ~27 MB as base64 while committing,
 // so the archive ceiling is kept well under the 128 MB isolate limit.
@@ -723,13 +724,47 @@ export default {
       // lands on a COLD isolate and any per-request cache is useless — the DDL
       // was costing ~15 D1 round trips on every call. Tables are created at
       // deploy time and re-asserted by the cron below.
+      // Read replication. The database's home region is US-East; with replication
+      // on, D1 keeps copies elsewhere and a SESSION is what routes a read to the
+      // nearest one. Without withSession() every query still crosses to the
+      // primary, so enabling replication alone changes nothing.
+      //
+      // A write always goes to the primary. Reads start from the bookmark the
+      // browser sends back, which is what guarantees you can see what you just
+      // saved — "first-unconstrained" only ever applies to a session with no
+      // history, where there is nothing of your own to miss.
+      let session = null;
+      let dbEnv = env;
+      if (env.DB && typeof env.DB.withSession === "function") {
+        const writing = request.method !== "GET" && request.method !== "OPTIONS";
+        const sent = request.headers.get("X-D1-Bookmark");
+        const start = writing ? "first-primary" : (sent || "first-unconstrained");
+        try {
+          session = env.DB.withSession(start);
+          dbEnv = new Proxy(env, { get: (t, k) => (k === "DB" ? session : t[k]) });
+        } catch { session = null; dbEnv = env; }
+      }
+      const withBookmark = (res) => {
+        if (!session || typeof session.getBookmark !== "function") return res;
+        let mark = null;
+        try { mark = session.getBookmark(); } catch { mark = null; }
+        if (!mark) return res;
+        const out = new Response(res.body, res);   // headers on a returned Response are immutable
+        out.headers.set("X-D1-Bookmark", mark);
+        return out;
+      };
       try {
-        return await handlePanel(env, request, ctx, path);
+        return withBookmark(await handlePanel(dbEnv, request, ctx, path));
       } catch (e) {
-        return new Response(JSON.stringify({ error: String(e.message || e) }), {
-          status: 500,
+        // Never hand the vendor's raw sentence to the person reading the screen.
+        // A 503 from GitHub is not something they can fix, and telling them so in
+        // GitHub's words ("No server is currently available...") is what sent a
+        // VA to delete working keys on 2026-08-17.
+        const x = await explainVendorError(e);
+        return withBookmark(new Response(JSON.stringify({ error: x.message, outage: x.outage }), {
+          status: x.status,
           headers: { "Content-Type": "application/json", ...corsHeaders(env, request) },
-        });
+        }));
       }
     }
 
@@ -767,9 +802,50 @@ export default {
       await ensurePanelSchema(env);
       if (env.TELEGRAM_BOT_TOKEN) await pollBuilds(env, env.TELEGRAM_BOT_TOKEN);
       await pollPanelBuilds(env);
+      // v32: notice NEW apps and repos without anyone pressing anything.
+      // He kept reporting "some apps don't show" — every time, they were apps
+      // he had just made on Heroku, and Gitku only learned about them when
+      // someone happened to press "Refresh from Heroku". Once every half hour
+      // is plenty: it costs one list call per account, and a person pressing
+      // the button is still instant.
+      await maybeDiscover(env);
     })());
   },
 };
+
+/**
+ * A quiet, throttled account refresh.
+ *
+ * ⚠️ NOT every tick. The cron runs every 5 minutes and a refresh costs one
+ * Heroku list + one GitHub list per account — on his eight accounts that would
+ * be ~4,600 vendor calls a day for no reason. Half-hourly is well inside every
+ * rate limit (GitHub 5,000/hr and Heroku 4,500/hr, both PER ACCOUNT) and means
+ * a new app appears by itself within half an hour.
+ */
+// ⚠️ MEASURED, not guessed. One discovery costs ONE Heroku list + ONE GitHub
+// list per account. Running it on every 5-minute tick is 288 of each per
+// account per day, against published limits of 4,500/hr (Heroku) and 5,000/hr
+// (GitHub) — PER ACCOUNT. That is 12 calls an hour against a 4,500 ceiling.
+// It was throttled to 30 minutes out of caution and the caution was misplaced:
+// it meant an app he had just made could sit invisible for half an hour, which
+// is exactly the "it doesn't appear for quite some time" he keeps hitting.
+const DISCOVER_EVERY_MS = 90 * 1000;   // effectively every tick (cron is */2)
+async function maybeDiscover(env) {
+  try {
+    // create first, then read — reading a table that does not exist yet throws,
+    // and the catch below would have swallowed it into "never discover"
+    await env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)`).run();
+    const row = await env.DB.prepare(
+      `SELECT value FROM kv WHERE key='last_discover'`).first().catch(() => null);
+    const last = Number(row?.value || 0);
+    if (last && Date.now() - last < DISCOVER_EVERY_MS) return;
+    await env.DB.prepare(
+      `INSERT INTO kv (key,value) VALUES ('last_discover',?)
+       ON CONFLICT (key) DO UPDATE SET value=excluded.value`).bind(String(Date.now())).run();
+    await refreshCombos(env, "panel", undefined, { skipBuildpack: true });
+  } catch { /* discovery is a convenience; it must never break the tick */ }
+}
 
 // Schema is inlined so a fresh deploy is self-installing; it mirrors schema.sql.
 const SCHEMA = `

@@ -5,10 +5,13 @@ and restrained animation.
 Run against the MOCK build:
     python3 test/browser/v6.py [page.html]
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, json, sys
 from playwright.async_api import async_playwright
 
-PAGE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+PAGE = sys.argv[1] if len(sys.argv) > 1 else mock_page()
 OUT = "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad"
 
 fails = []

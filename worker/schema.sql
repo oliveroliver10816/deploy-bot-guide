@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS connections (
   label       TEXT NOT NULL,              -- friendly name shown in buttons
   token       TEXT NOT NULL,
   account     TEXT,                       -- github login / heroku email, verified at connect time
+  note        TEXT,                       -- free text: which client/site is on this key
   created_at  TEXT NOT NULL,
   UNIQUE (kind, label)
 );
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS repos (
   created_at    TEXT NOT NULL,
   url           TEXT,                     -- the domain shown to the user
   dir           TEXT DEFAULT '',          -- folder an uploaded file lands in
+  -- Same naming rule as apps.heroku_created_at above — never call these created_at.
+  gh_created_at TEXT,                     -- GitHub's own repository created_at
+  pushed_at     TEXT,                     -- GitHub's pushed_at: when files last changed (any branch)
   UNIQUE (owner, name)
 );
 
@@ -43,6 +47,16 @@ CREATE TABLE IF NOT EXISTS apps (
   created_at    TEXT NOT NULL,
   combo_id      INTEGER,                  -- which GitHub+Heroku pair it came from
   buildpack     TEXT,                     -- what Heroku will detect; NULL = nothing, so it cannot build
+  buildpack_sha TEXT,                     -- the commit that answer came from, so an unchanged repo is skipped
+  paused        INTEGER DEFAULT 0,        -- 1 = marked not in use (kept; no longer shown since v20)
+  note          TEXT,                     -- his note about this site, shown on Apps AND under the name on Deploy
+  note_color    TEXT,                     -- default|red|amber|green|blue|violet — a NAME, mapped per theme
+  released_at   TEXT,                     -- Heroku's own released_at: when the code serving this address last changed
+  built_sha     TEXT,                     -- the commit this app last built; differs from HEAD => rebuild it
+  -- ⚠️ NAME IT heroku_created_at, NEVER created_at: runMigrations back-fills any
+  -- new column called created_at with the time the migration ran, which would
+  -- then be printed on screen as a creation date. That is a lie one rename away.
+  heroku_created_at TEXT,                 -- Heroku's own "when app was created" 
   UNIQUE (connection_id, heroku_name)
 );
 
@@ -144,11 +158,50 @@ CREATE TABLE IF NOT EXISTS batch_targets (
   build_id      TEXT,
   build_url     TEXT,
   files_json    TEXT,                      -- every path this target wrote, for undo
+  started_at    TEXT,                      -- when the build was handed to Heroku; anchors the give-up clock
   finished_at   TEXT,
   PRIMARY KEY (batch_id, repo_id)
 );
 
 CREATE INDEX IF NOT EXISTS bt_pending ON batch_targets (status);
+
+-- v29: when a file last changed, from OUR OWN records.
+--
+-- Gitku does ~99% of the writes to these repos, so it already knows. GitHub
+-- cannot answer this cheaply: a git tree carries no dates at all, and
+-- `GET /commits?path=` is one request PER FILE against a hard 50-subrequest
+-- ceiling per Worker invocation. One row per (repo, path), upserted by every
+-- write the panel makes — the Deploy screen and the File Manager alike.
+-- ⚠️ A path that is NOT in here has no date and must render blank. It must
+-- never fall back to the repo's date: that would say "all 500 files changed
+-- today" when one did.
+-- v31: TAGS. His notes were already tags in practice — 21 notes across his apps
+-- were only 7 distinct strings, retyped by hand every time. A tag is written
+-- ONCE and then clicked onto any app.
+--
+-- ⚠️ `apps.note` and `apps.note_color` are NOT dropped. The migration copies
+-- every existing note into a tag and links it; the old columns stay exactly as
+-- they were, because nothing in this project deletes his words to make room.
+CREATE TABLE IF NOT EXISTS tags (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  label      TEXT NOT NULL,
+  color      TEXT,                    -- default|red|amber|green|blue|violet, a NAME
+  created_at TEXT NOT NULL,
+  UNIQUE (label, color)
+);
+CREATE TABLE IF NOT EXISTS app_tags (
+  app_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (app_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS app_tags_tag ON app_tags (tag_id);
+
+CREATE TABLE IF NOT EXISTS file_times (
+  repo_id INTEGER NOT NULL,
+  path    TEXT NOT NULL,
+  at      TEXT NOT NULL,
+  PRIMARY KEY (repo_id, path)
+);
 
 -- ---- combos, auto-discovery, audit log (2026-08-13) ---------------------
 -- A "combo" pairs ONE GitHub account with ONE Heroku account. Several combos
@@ -163,6 +216,13 @@ CREATE TABLE IF NOT EXISTS combos (
 );
 
 -- Every action worth explaining later. Stored as ISO UTC; the panel renders IST.
+--
+-- The log answers three questions, not one:
+--   kind='person' — somebody pressed something
+--   kind='panel'  — the panel did it on its own (a build started/finished, the
+--                   cron moved a batch on, a buildpack was detected, a refresh
+--                   auto-linked an app, the schema was brought up to date)
+--   ok=0 + error  — it failed, and this is WHY, in words that say what to do
 CREATE TABLE IF NOT EXISTS audit_log (
   id     INTEGER PRIMARY KEY AUTOINCREMENT,
   at     TEXT NOT NULL,
@@ -170,6 +230,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action TEXT NOT NULL,
   target TEXT,
   detail TEXT,
-  ok     INTEGER DEFAULT 1
+  ok     INTEGER DEFAULT 1,
+  kind   TEXT DEFAULT 'person',            -- 'person' | 'panel'
+  error  TEXT,                             -- why it failed, when ok=0
+  ref    TEXT                              -- batch id / heroku app / owner-repo
 );
 CREATE INDEX IF NOT EXISTS audit_recent ON audit_log (id DESC);
+CREATE INDEX IF NOT EXISTS audit_kind   ON audit_log (kind, id DESC);
+CREATE INDEX IF NOT EXISTS audit_bad    ON audit_log (ok, id DESC);

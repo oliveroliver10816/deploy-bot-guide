@@ -45,6 +45,14 @@ export async function listApps(token, f = fetch) {
   return (Array.isArray(r.body) ? r.body : []).map((a) => ({
     name: a.name,
     web_url: a.web_url,
+    // Heroku's own word for it: "when app was created". It arrives in this very
+    // response and used to be dropped on the floor; the panel shows it as
+    // "Created on", so it must be the vendor's date and not ours.
+    created_at: a.created_at || null,
+    // null until the app has had a successful release. An app that has NEVER
+    // been released serves Heroku's "Welcome to your new app!" page with a 502,
+    // which reads exactly like a broken site — so the panel has to know.
+    released_at: a.released_at || null,
   }));
 }
 
@@ -115,6 +123,18 @@ export async function getBuild(token, app, buildId, f = fetch) {
     status: normalizeStatus(r.body.status),
     output_stream_url: r.body.output_stream_url,
   };
+}
+
+/**
+ * Delete an app — PERMANENT. The app, its config vars, its add-ons and its
+ * herokuapp.com address are all gone and neither we nor Heroku support can
+ * bring them back. Needs nothing beyond the API key of the owning account,
+ * which is exactly why the caller must gate it behind a typed-name confirm.
+ */
+export async function deleteApp(token, app, f = fetch) {
+  const r = await hk(token, `/apps/${encodeURIComponent(app)}`, { method: "DELETE" }, f);
+  if (!r.ok) throw new Error(`Could not delete the app (HTTP ${r.status}): ${r.body?.message || ""}`);
+  return true;
 }
 
 /** Last few lines of the build log, for reporting a failure usefully. */

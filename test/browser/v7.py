@@ -2,10 +2,13 @@
 v7: multi-select delete in Files, plus the two blocking defects a review caught
 (an empty checkbox drawing a tick, and the buildpack notice crying wolf).
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _serve import mock_page
 import asyncio, sys
 from playwright.async_api import async_playwright
 
-PAGE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/claude-0/-root-workspace/a118e9ed-148f-4f48-82a8-214aea5700d1/scratchpad/panelpreview/index.html"
+PAGE = sys.argv[1] if len(sys.argv) > 1 else mock_page()
 fails = []
 def ck(c, n, x=""):
     print(("  ok   " if c else "  FAIL ") + n + ((" [" + str(x) + "]") if x and not c else ""))
@@ -33,7 +36,12 @@ async def main():
         ck(len(warned) == 1, "exactly the one unbuildable app warns on Deploy", str([c["t"] for c in warned]))
 
         # open the app that has NEVER been checked; its banner must stay silent
-        chip = await pg.query_selector('#siteGrid [data-act="open-files"]')
+        # v10 made every list newest-first, so position is no longer identity:
+        # pick the app the assertion is ABOUT (northgate-supply is the one with
+        # no buildpack), not whichever card happens to be first.
+        chip=await pg.query_selector(
+            '#siteGrid [data-act="open-files"][aria-label*="northgate-supply"]'
+        ) or await pg.query_selector('#siteGrid [data-act="open-files"]')
         await chip.click(); await pg.wait_for_timeout(2600)
         # walk to each app via Change app and check the banner text matches its state
         banner = await pg.evaluate("""() => (document.querySelector('#fvBanner')||{innerText:''}).innerText""")
@@ -68,16 +76,20 @@ async def main():
             return els.length;
         }""")
         await pg.wait_for_timeout(400)
-        bar = await pg.evaluate("() => (document.querySelector('#fvSelBar')||{innerText:''}).innerText")
+        # v28: the count and the delete control live on the toolbar above the
+        # file list now, not in a full-width bar below the header.
+        bar = await pg.evaluate("() => (document.querySelector('#fvBarCount')||{innerText:''}).innerText")
         ck("selected" in bar.lower(), "a selection bar appears with a count", bar[:60])
         # re-query between presses: the bar re-renders and handles go stale
-        sel = '#fvSelBar button'
+        sel = '#fvBarDel'
         first = await pg.query_selector(sel)
         if first:
             await first.click(); await pg.wait_for_timeout(400)
-            armed = await pg.evaluate("() => (document.querySelector('#fvSelBar')||{innerText:''}).innerText")
-            ck("again" in armed.lower(), "the first press only arms it", armed[:80])
-            again = await pg.query_selector(sel)
+            # v29: one press opens a real confirm box; it no longer arms the
+            # control that asked. The second press is inside the dialog.
+            opened = await pg.evaluate("() => !!document.querySelector('#fvDelDlg[open]')")
+            ck(opened, "the first press only asks", str(opened))
+            again = await pg.query_selector('#fvDelGo')
             if again: await again.click()
             await pg.wait_for_timeout(2000)
             n = await pg.evaluate("() => (window.__posts||[]).length")
