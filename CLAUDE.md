@@ -1817,3 +1817,29 @@ Cloudflare's internal `_cf_*` tables when dumping.
 
 **Tests:** node **623 panel + 69 bot**. Front-end unchanged since v32's ZIP, so the browser suites
 were not re-run for the worker-only work.
+
+## 2026-08-28 — v8→v32 committed and pushed; this box is no longer the only copy
+
+Everything built between `v7 shipped` (13 Aug) and v32 (25 Aug) had never been committed — 46 files,
+12,525 insertions. It is now on `origin/main` as `e85acb2`, verified by fetching the remote and
+comparing hashes.
+
+### 🛑 The repo is PUBLIC, and the diff was about to publish things that had never been public
+`deploy-bot-guide` is public because it serves the guide on GitHub Pages. Checked every candidate
+file against `HEAD` before staging: **four identifier families were new** — two persona Google
+accounts named in code comments and in this file, three more GitHub owner names, and two extra panel
+login names. None of them existed in the public tree. They are replaced by placeholders
+(`owner-a`…`owner-e`, `owner-login`, `va-login-N`) and the real values now live in **`LOCAL-NOTES.md`,
+which is gitignored and stays on this box**. Verified after the push by re-reading the three worst
+files from `raw.githubusercontent.com`: 0 hits each.
+⚠️ `.wrangler/cache/wrangler-account.json` was ALREADY public and named the Cloudflare account owner.
+It is untracked now (404 on raw), but **git history still holds it** — the same is true of
+`owner-login` and `va-login-3`, which were public from v7. Renaming those two logins in the panel is
+the only thing that actually retires them.
+⚠️ Also kept out of the commit: `panel/public/index.html.PRE-PKBAR` (a working backup) and
+`test/browser/__pycache__/`. `.gitignore` now covers `panel/public/*.PRE-*`, `__pycache__/`,
+`LOCAL-NOTES.md` and `.wrangler/`.
+
+**Nothing was deployed.** The live panel still answers v32 at 491,985 bytes — byte-identical to
+`panel/dist/deploy/index.html` — and the guide page still returns 200. Tests re-run before the
+commit: **623 panel + 69 bot, 0 failures**.
