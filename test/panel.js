@@ -2640,5 +2640,61 @@ console.log("\n── v25: the panel rebuilds an app when its repo moves, by its
      "and the next tick really does try it again — the failure was not recorded as done");
 }
 
+console.log("\n── v35: the diary reads the day back, and keeps only his words ──");
+{
+  const h = newEnv();
+  const { m, v, byName } = await setup(h);
+  // do a few real things so the day has facts of its own
+  const repos = (await call(h, "GET", "/api/repos", { token: m })).body.repos;
+  const repo = repos.find((r) => r.name === "site-one");
+  await call(h, "POST", "/api/link", { token: m, json: { app_id: byName["app-one"].id, repo_id: repo.id } });
+  await call(h, "POST", `/api/build/repo/${repo.id}`, { token: m, json: {} });
+
+  const d0 = (await call(h, "GET", "/api/diary", { token: m })).body;
+  ok(d0.ok === true && /^\d{4}-\d{2}-\d{2}$/.test(d0.day), "it opens on today by itself", d0.day);
+  ok(d0.summary && d0.summary.total > 0, "and the day already has facts, with nothing typed in",
+     JSON.stringify(d0.summary));
+  ok(d0.summary.builds >= 1, "the builds it counts are the builds that happened", String(d0.summary.builds));
+  ok(Array.isArray(d0.touched) && d0.touched.length > 0,
+     "the things touched that day are offered to pick from", JSON.stringify(d0.touched).slice(0, 160));
+  ok(d0.notes.length === 0, "and no notes until someone writes one");
+
+  const app = d0.touched[0];
+  ok((await call(h, "POST", "/api/diary", { token: m,
+       json: { note: "moved the pricing block", ref_kind: "app", ref_label: app.ref } })).status === 200,
+     "a note saves against one of them");
+  ok((await call(h, "POST", "/api/diary", { token: m, json: { note: "  " } })).status >= 400,
+     "an empty note is refused, not stored blank");
+
+  const d1 = (await call(h, "GET", "/api/diary", { token: m })).body;
+  ok(d1.notes.length === 1 && d1.notes[0].note === "moved the pricing block",
+     "it reads back on that day", JSON.stringify(d1.notes));
+  ok(d1.notes[0].ref_label === app.ref, "still naming what it was about", d1.notes[0].ref_label);
+  ok(d1.notes[0].actor === "master1", "and who wrote it", d1.notes[0].actor);
+
+  // 🛑 the point of storing the LABEL: he deletes apps every day
+  await call(h, "DELETE", `/api/app/${byName["app-one"].id}`, { token: m, json: { name: "app-one" } });
+  const d2 = (await call(h, "GET", "/api/diary", { token: m })).body;
+  ok(d2.notes.length === 1 && d2.notes[0].ref_label === app.ref,
+     "a note about a DELETED app is still readable", JSON.stringify(d2.notes[0] || {}));
+
+  // an old day is empty rather than wrong
+  const old = (await call(h, "GET", "/api/diary?day=2020-01-01", { token: m })).body;
+  ok(old.day === "2020-01-01" && old.notes.length === 0 && !old.summary.total,
+     "a day with nothing on it says nothing, and does not borrow today's", JSON.stringify(old.summary));
+  const bad = (await call(h, "GET", "/api/diary?day=not-a-day", { token: m })).body;
+  ok(bad.day === d0.day, "a nonsense day falls back to today rather than erroring", bad.day);
+
+  ok(Array.isArray(d1.days) && d1.days.some((x) => x.day === d0.day),
+     "the picker lists the days that have something on them", JSON.stringify(d1.days).slice(0, 120));
+
+  const id = d1.notes[0].id;
+  ok((await call(h, "DELETE", `/api/diary/${id}`, { token: v })).status === 403,
+     "a VA cannot delete someone else's note");
+  ok((await call(h, "DELETE", `/api/diary/${id}`, { token: m })).status === 200,
+     "the person who wrote it can");
+  ok((await call(h, "GET", "/api/diary", { token: m })).body.notes.length === 0, "and it is gone");
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

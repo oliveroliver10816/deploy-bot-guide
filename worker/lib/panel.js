@@ -638,6 +638,10 @@ export async function ensurePanelSchema(env, force) {
     // v31: tags — one label, written once, clicked onto any app
     `CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, color TEXT, created_at TEXT NOT NULL, UNIQUE (label, color))`,
     `CREATE TABLE IF NOT EXISTS app_tags (app_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (app_id, tag_id))`,
+    // v35: the diary. Only his words live here — the day's facts are read back
+    // out of audit_log, so the record cannot drift from what happened.
+    `CREATE TABLE IF NOT EXISTS diary (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, actor TEXT NOT NULL, ref_kind TEXT, ref_id INTEGER, ref_label TEXT, note TEXT NOT NULL, at TEXT NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS diary_day ON diary (day)`,
     `CREATE INDEX IF NOT EXISTS app_tags_tag ON app_tags (tag_id)`,
   ];
   for (const s of stmts) await env.DB.prepare(s).run();
@@ -1830,6 +1834,95 @@ export async function handlePanel(env, request, ctx, path) {
   }
 
   // ---- pull apps and repos again -----------------------------------------
+  // ---- the diary / day book -----------------------------------------------
+  // The day's FACTS come out of audit_log; only his words are stored. Grouping
+  // is by IST day, done in SQL, so the day boundary is the one he lives in and
+  // not the server's — a note written at 02:00 IST belongs to that morning.
+  const IST = `datetime(at, '+5 hours', '+30 minutes')`;
+  if (route === "diary" && request.method === "GET") {
+    const url = new URL(request.url);
+    const day = (url.searchParams.get("day") || "").slice(0, 10);
+    const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
+    return retryAfterMigration(env, async () => {
+      // Every day that has anything to show, so the picker can never offer an
+      // empty one — days with activity OR with notes, newest first.
+      const days = (await q(env,
+        `SELECT day, SUM(acts) acts, SUM(notes) notes FROM (
+           SELECT substr(${IST},1,10) day, COUNT(*) acts, 0 notes FROM audit_log GROUP BY day
+           UNION ALL
+           SELECT day, 0, COUNT(*) FROM diary GROUP BY day
+         ) GROUP BY day ORDER BY day DESC LIMIT 120`).all()).results || [];
+      const sum = (await q(env,
+        `SELECT
+           SUM(action='created a Heroku app')  made_apps,
+           SUM(action='created a repo')        made_repos,
+           SUM(action='made a new site')       made_sites,
+           SUM(action='deleted a Heroku app')  gone_apps,
+           SUM(action='deleted a repo')        gone_repos,
+           SUM(action='started a build')       builds,
+           SUM(action='started a deploy')      deploys,
+           SUM(action='tagged an app')         tagged,
+           SUM(ok=0)                           failed,
+           COUNT(*)                            total
+         FROM audit_log WHERE substr(${IST},1,10)=?`, d).first()) || {};
+      // What was TOUCHED that day, for the dropdown. `ref` is the app or repo
+      // the line was about; a line with no ref is about the day, not a thing.
+      const touched = (await q(env,
+        `SELECT ref, MIN(${IST}) first_at, COUNT(*) n,
+                GROUP_CONCAT(DISTINCT action) actions
+           FROM audit_log
+          WHERE substr(${IST},1,10)=? AND ref IS NOT NULL AND ref<>''
+          GROUP BY ref ORDER BY ref`, d).all()).results || [];
+      const notes = (await q(env,
+        `SELECT id, day, actor, ref_kind, ref_id, ref_label, note, at
+           FROM diary WHERE day=? ORDER BY at`, d).all()).results || [];
+      // Tags of the apps named that day, so a diary line keeps the labels the
+      // app carried — including for an app that has since been deleted.
+      const names = touched.map((t) => t.ref);
+      let tags = [];
+      if (names.length) {
+        tags = (await q(env,
+          `SELECT a.heroku_name ref, t.label, t.color FROM apps a
+             JOIN app_tags at2 ON at2.app_id=a.id
+             JOIN tags t ON t.id=at2.tag_id
+            WHERE a.heroku_name IN (${names.map(() => "?").join(",")})`, ...names).all()).results || [];
+      }
+      return json(env, request, { ok: true, day: d, today, days, summary: sum, touched, notes, tags });
+    });
+  }
+  if (route === "diary" && request.method === "POST") {
+    const b = await body();
+    const note = String((b && b.note) || "").trim();
+    if (!note) return err(env, request, "Write something first.", 400);
+    if (note.length > 4000) return err(env, request, "That note is too long — keep it under 4,000 characters.", 400);
+    const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(b.day || "")) ? String(b.day) : today;
+    const kind = b.ref_kind === "app" || b.ref_kind === "repo" ? b.ref_kind : null;
+    return retryAfterMigration(env, async () => {
+      await q(env,
+        `INSERT INTO diary (day, actor, ref_kind, ref_id, ref_label, note, at)
+         VALUES (?,?,?,?,?,?,?)`,
+        day, me.username, kind, b.ref_id ? Number(b.ref_id) : null,
+        b.ref_label ? String(b.ref_label).slice(0, 200) : null, note, nowIso()).run();
+      await logAction(env, me.username, "wrote a diary note", b.ref_label || day, null, 1,
+        { ref: b.ref_label || undefined });
+      return json(env, request, { ok: true });
+    });
+  }
+  if (route === "diary" && request.method === "DELETE" && seg[2]) {
+    return retryAfterMigration(env, async () => {
+      const row = await q(env, `SELECT actor, ref_label, day FROM diary WHERE id=?`, Number(seg[2])).first();
+      if (!row) return err(env, request, "That note is already gone.", 404);
+      // A VA can take back what a VA wrote; only a master can remove someone else's.
+      if (row.actor !== me.username && outRole(me.role) !== "owner")
+        return err(env, request, "That note was written by someone else.", 403);
+      await q(env, `DELETE FROM diary WHERE id=?`, Number(seg[2])).run();
+      await logAction(env, me.username, "removed a diary note", row.ref_label || row.day, null, 1);
+      return json(env, request, { ok: true });
+    });
+  }
+
   // v12: an optional {combo_id} narrows the refresh to one pair and returns
   // the same summary shape for it, so the browser can refresh every pair in
   // parallel and paint each answer as it arrives. No combo_id = everything,

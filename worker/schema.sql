@@ -238,3 +238,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS audit_recent ON audit_log (id DESC);
 CREATE INDEX IF NOT EXISTS audit_kind   ON audit_log (kind, id DESC);
 CREATE INDEX IF NOT EXISTS audit_bad    ON audit_log (ok, id DESC);
+
+-- ---- the diary / day book (2026-08-29) ----------------------------------
+-- His ask: "a Notes section maybe, some kind of daily diary that captures
+-- everything and records how many sites were used, and actually we also delete
+-- some apps everyday, so it will be out log file too".
+--
+-- The DAY'S FACTS are not stored here — audit_log already holds every create,
+-- delete, build and deploy with its target, so the diary reads them back and
+-- can never drift from what actually happened. This table holds only the part
+-- a machine cannot write: what he says about the day.
+--
+-- 🛑 ref_label is TEXT, not just an id. He deletes apps every day, and a diary
+-- line about an app that no longer exists is exactly the line worth keeping.
+CREATE TABLE IF NOT EXISTS diary (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  day       TEXT NOT NULL,          -- YYYY-MM-DD, IST, the day he means
+  actor     TEXT NOT NULL,
+  ref_kind  TEXT,                   -- 'app' | 'repo' | NULL for a note on the day itself
+  ref_id    INTEGER,
+  ref_label TEXT,
+  note      TEXT NOT NULL,
+  at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS diary_day ON diary (day);

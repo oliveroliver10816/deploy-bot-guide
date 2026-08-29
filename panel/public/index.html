@@ -1455,6 +1455,39 @@ select[aria-busy="true"]{opacity:.55;cursor:progress}
 /* v31: a TAG. Same colour names as the note it replaces, mapped per theme, so
    it stays legible in both. The X is part of the chip, not a second control
    floating beside it. */
+/* v35 — HOME. Cards that are links, a day's facts on one line, and the day book.
+   Full width, like every other screen: a 34" monitor must not show a column. */
+.hm-jump{min-width:min(420px,42vw)}
+.hm-cards{display:grid;gap:var(--sp-3);grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.hm-card{display:flex;flex-direction:column;gap:2px;padding:var(--sp-3) var(--sp-4);
+  border:var(--bw) solid var(--line-1);border-radius:var(--r-1);background:var(--bg-3);
+  text-decoration:none;color:inherit}
+.hm-card:hover{background:var(--bg-4);border-color:var(--line-2)}
+.hm-n{font-family:var(--mono);font-size:var(--fs-3);font-weight:700;color:var(--ink-1);line-height:1.1}
+.hm-l{font-size:var(--fs--1);color:var(--ink-3)}
+.hm-wrong{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.hm-warn{display:inline-flex;align-items:center;gap:var(--sp-2);text-decoration:none;
+  padding:var(--sp-1) var(--sp-3);border-radius:var(--r-round);font-size:var(--fs--1);font-weight:600;
+  color:var(--warn,var(--ink-1));background:var(--bg-4);border:var(--bw) solid var(--line-2)}
+.hm-warn:hover{border-color:var(--accent-line)}
+.hm-facts{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);margin:var(--sp-2) 0 0}
+.hm-fact{font-size:var(--fs--1);color:var(--ink-2)}
+.hm-fact b{font-family:var(--mono);color:var(--ink-1)}
+.hm-list{list-style:none;margin:0;padding:0;display:grid;gap:var(--sp-1);
+  grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.hm-list li{display:flex;align-items:center;gap:var(--sp-2);min-width:0;
+  font-size:var(--fs--1);padding:2px 0}
+.hm-list .nm{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-daypick{margin:0;min-width:230px}
+.hm-notes{list-style:none;margin:var(--sp-3) 0 0;padding:0;display:grid;gap:var(--sp-2)}
+.hm-note{display:flex;align-items:flex-start;gap:var(--sp-3);justify-content:space-between;
+  padding:var(--sp-2) 0;border-top:var(--bw) solid var(--line-1)}
+.hm-note .note-text{flex:1 1 auto;min-width:0}
+.hm-meta{display:flex;align-items:center;gap:var(--sp-2);flex:none;font-size:var(--fs--2)}
+.hm-meta .nm{font-family:var(--mono);color:var(--ink-2)}
+.field.grow{flex:1 1 320px}
+@media (max-width:900px){.hm-jump{min-width:0;width:100%}}
+
 /* v31 (3): the account heading that groups the Apps table. It spans every
    column, so it never fights the grid the rows share. */
 .apptbl-group{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-2);min-width:0;
@@ -1741,6 +1774,8 @@ select[aria-busy="true"]{opacity:.55;cursor:progress}
       <span class="brand-text"><span class="brand-name">Gitku</span><span class="brand-sub">Control room</span></span>
     </div>
     <nav class="rail-nav" aria-label="Main">
+      <a class="nav-item" href="#/home" data-view="home"  aria-label="Home">
+        <svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg><span class="lbl">Home</span></a>
       <a class="nav-item" href="#/deploy" data-view="deploy"  aria-label="Deploy">
         <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span class="lbl">Deploy</span></a>
       <a class="nav-item" href="#/files" data-view="files"  aria-label="File Manager">
@@ -1903,6 +1938,24 @@ select[aria-busy="true"]{opacity:.55;cursor:progress}
     </section>
 
     <!-- ===== ACTIVITY LOG ===== -->
+    <section id="view-home" class="view" aria-label="Home" hidden>
+      <header class="view-head">
+        <div>
+          <h1 tabindex="-1">Home</h1>
+          <p class="sub">Where everything is, and what happened today.</p>
+        </div>
+        <div class="hm-jump">
+          <label class="field">
+            <span>Go to</span>
+            <select id="hmJump">
+              <option value="">Pick an app, a repo or a screen&hellip;</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <div id="hmBody"></div>
+    </section>
+
     <section id="view-log" class="view" aria-label="Activity log" hidden>
       <header class="view-head">
         <div>
@@ -2746,6 +2799,8 @@ const MOCK_API=(()=>{
       body=o;
     }
     const p=path.split('?')[0].split('/').filter(Boolean).slice(1); // after 'api'
+    const qs=new URLSearchParams(path.split('?')[1]||'');
+    const dbToday=()=>new Date().toISOString().slice(0,10);
 
     if(path==='/api/login'&&method==='POST'){
       const u=db.users.find(x=>x.username===String(body.username||'').trim().toLowerCase());
@@ -2864,6 +2919,43 @@ const MOCK_API=(()=>{
       db.combos.push(c);
       log('pair',c.label,c.apps+' apps pulled');
       return delay({ok:true,discovered:{apps:c.apps,repos:db.repos.filter(r=>r.account===g.id).length,linked:db.sites.filter(s=>s.account===h.id&&s.linked).length,errors:[]}});
+    }
+    /* v35: the day book, offline. The day's FACTS are derived from the demo
+       activity log exactly as the server derives them from audit_log, so the
+       preview cannot show a shape the real screen never produces. */
+    if(p[0]==='diary'&&method==='DELETE'){
+      db.diary=(db.diary||[]).filter(x=>String(x.id)!==p[1]);
+      return delay({ok:true});
+    }
+    if(path==='/api/diary'&&method==='POST'){
+      db.diary=db.diary||[];
+      db.diary.push({id:'d'+(++seq),day:body.day||dbToday(),actor:'you',
+        ref_kind:body.ref_kind||null,ref_id:body.ref_id||null,
+        ref_label:body.ref_label||null,note:String(body.note||''),at:new Date().toISOString()});
+      return delay({ok:true});
+    }
+    if(path.split('?')[0]==='/api/diary'){
+      const want=(qs.get('day')||dbToday()).slice(0,10);
+      const dayOf=e=>String(e.at||'').slice(0,10);
+      const mine=(db.logs||[]).filter(e=>dayOf(e)===want);
+      const n=a=>mine.filter(e=>e.action===a).length;
+      const touched=[...new Set(mine.map(e=>e.ref||e.target).filter(Boolean))]
+        .sort().map(ref=>({ref,n:mine.filter(e=>(e.ref||e.target)===ref).length}));
+      const days=[...new Set([...(db.logs||[]).map(dayOf),
+        ...((db.diary||[]).map(x=>x.day))].filter(Boolean))].sort().reverse()
+        .map(day=>({day,acts:(db.logs||[]).filter(e=>dayOf(e)===day).length,
+                    notes:(db.diary||[]).filter(x=>x.day===day).length}));
+      return delay({ok:true,day:want,today:dbToday(),days,
+        summary:{made_sites:n('made a new site'),made_apps:n('created a Heroku app'),
+          made_repos:n('created a repo'),gone_apps:n('deleted a Heroku app'),
+          gone_repos:n('deleted a repo'),builds:n('started a build'),
+          deploys:n('started a deploy'),tagged:n('tagged an app'),
+          failed:mine.filter(e=>!e.ok).length,total:mine.length},
+        touched,notes:(db.diary||[]).filter(x=>x.day===want),
+        tags:touched.flatMap(t=>{
+          const site=db.sites.find(x=>x.app===t.ref||x.label===t.ref);
+          return site?(site.tags||[]).map(tg=>({ref:t.ref,label:tg.label,color:tg.color})):[];
+        })});
     }
     if(p[0]==='combo'&&method==='DELETE'){
       const c=db.combos.find(x=>String(x.id)===p[1]);
@@ -3601,6 +3693,7 @@ function showView(v){
   }
   S.view=v;
   markRail();
+  $('#view-home').hidden=v!=='home';
   $('#view-deploy').hidden=v!=='deploy';
   $('#view-files').hidden=v!=='files';
   $('#view-log').hidden=v!=='log';
@@ -3608,7 +3701,8 @@ function showView(v){
   $('#view-settings').hidden=v!=='settings';
   document.title='Gitku — '+(v==='settings'
     ?(TAB_TITLE[S.tab]||'Set up')
-    :({deploy:'Deploy',files:'File Manager',log:'Activity log',kb:'Guide'}[v]||''));
+    :({home:'Home',deploy:'Deploy',files:'File Manager',log:'Activity log',kb:'Guide'}[v]||''));
+  if(v==='home')renderHome();
   if(v==='deploy')renderDeploy();
   if(v==='files')renderFiles();
   if(v==='log')renderLog();
@@ -3674,6 +3768,7 @@ function parseHash(h){
   if(!h)return null;
   const seg=h.split('/').filter(Boolean).map(x=>{try{return decodeURIComponent(x);}catch(e){return x;}});
   const top=seg[0];
+  if(top==='home')return{view:'home'};
   if(top==='deploy')return{view:'deploy'};
   if(top==='log')return{view:'log'};
   if(top==='files')return{view:'files',app:seg[1]||null,dir:seg.slice(2).join('/')};
@@ -3686,7 +3781,7 @@ function parseHash(h){
   /* the old #/settings/... addresses keep working — bookmarks must not rot */
   if(top==='settings')return{view:'settings',tab:seg[1]||'accounts'};
   if(top==='guide')return{view:'kb',kb:seg[1]||null};
-  return{view:'deploy'};              /* an unknown link lands on Deploy, kindly */
+  return{view:'home'};                /* an unknown link lands on Home, kindly */
 }
 /* the canonical address for the state the panel is actually in */
 function routeHash(){
@@ -3697,6 +3792,7 @@ function routeHash(){
     return'/files/'+encodeURIComponent(String(S.fv.appId))
       +(dir?'/'+dir.split('/').map(encodeURIComponent).join('/'):'');
   }
+  if(v==='home')return'/home';
   if(v==='settings')return'/'+(TAB_PATH[S.tab]||'accounts');
   if(v==='kb')return'/guide/'+encodeURIComponent(S.kb||'send');
   if(v==='log')return'/log';
@@ -3723,7 +3819,7 @@ function syncHash(forceReplace){
    forbidden link degrades to the nearest sensible screen with a plain word,
    never a blank page. */
 function gotoRoute(r){
-  if(!r){showView('deploy');return;}
+  if(!r){showView('home');return;}    /* no address at all = the landing screen */
   if(r.view==='settings'){
     let tab=r.tab;
     const wantPairs=tab==='pairs';
@@ -3783,7 +3879,7 @@ function gotoRoute(r){
     }
     return;
   }
-  showView(r.view==='log'?'log':'deploy');
+  showView(r.view==='log'?'log':(r.view==='home'?'home':'deploy'));
 }
 /* back, forward, a pasted address, a bookmark */
 window.addEventListener('hashchange',()=>{
@@ -3793,6 +3889,186 @@ window.addEventListener('hashchange',()=>{
   /* if a guard said no, or the link needed correcting, the address follows
      the truth — replacing, so no extra history entry appears */
   syncHash(true);
+});
+
+/* ======================================================================
+   HOME — where everything is, and what happened today.
+
+   His ask: "a Home page ... that has links to everything in a dropdown list
+   where I'd want to go (file manager, app or that repo)" and "a Notes section
+   maybe, some kind of daily diary that captures everything and records how many
+   sites were used, and actually we also delete some apps everyday, so it will
+   be out log file too".
+
+   ⚠ The DAY'S FACTS are never typed and never stored twice — they are read back
+   out of the activity log, which already records every create, delete, build and
+   deploy with its target. The diary stores only his words. A number on this
+   screen therefore cannot disagree with the log it came from.
+   ====================================================================== */
+const HM={day:null,data:null,loading:false,ref:''};
+
+function hmJumpOptions(){
+  const sel=$('#hmJump'); if(!sel)return;
+  const sites=(S.state&&S.state.sites)||[], repos=S.repos||[];
+  const opt=(v,t)=>`<option value="${esc(v)}">${esc(t)}</option>`;
+  const grp=(l,rows)=>rows.length?`<optgroup label="${esc(l)}">${rows.join('')}</optgroup>`:'';
+  sel.innerHTML=opt('','Pick an app, a repo or a screen…')
+    +grp('Screens',[opt('#/deploy','Deploy'),opt('#/files','File Manager'),
+                    opt('#/apps','Apps'),opt('#/repos','Repos'),
+                    opt('#/accounts','Accounts & keys'),opt('#/new','New site'),
+                    opt('#/log','Activity log')])
+    /* an app goes to its FILES, because that is what he wants when he names an
+       app — an app with no repo has nothing to open, so it goes to Apps */
+    +grp('Apps — opens its files',sites.filter(x=>x.linked)
+        .map(x=>opt('#/files/'+encodeURIComponent(String(x.id)),x.label+'  ('+x.owner+'/'+x.repo+')')))
+    +grp('Apps — not linked yet',sites.filter(x=>!x.linked).map(x=>opt('#/apps',x.label)))
+    +grp('Repos',repos.map(r=>{
+        const app=sites.find(x=>x.linked&&x.owner===r.owner&&x.repo===r.name);
+        return opt(app?'#/files/'+encodeURIComponent(String(app.id)):'#/repos',r.owner+'/'+r.name);
+      }));
+}
+
+async function hmLoad(day){
+  HM.loading=true; renderHome();
+  try{
+    HM.data=await api('/api/diary'+(day?('?day='+encodeURIComponent(day)):''));
+    HM.day=HM.data.day;
+  }catch(ex){ HM.data={error:ex.message}; }
+  HM.loading=false; renderHome();
+}
+
+function renderHome(){
+  hmJumpOptions();
+  const body=$('#hmBody'); if(!body)return;
+  if(!HM.data&&!HM.loading){ hmLoad(); return; }
+  const sites=(S.state&&S.state.sites)||[], repos=S.repos||[];
+  const combos=(S.state&&S.state.combos)||[];
+  const d=HM.data||{}, sum=d.summary||{}, touched=d.touched||[], notes=d.notes||[];
+  /* the numbers that describe the fleet, each one a way in */
+  const card=(n,label,href)=>`<a class="hm-card" href="${href}">
+      <span class="hm-n">${n}</span><span class="hm-l">${esc(label)}</span></a>`;
+  const neverBuilt=sites.filter(x=>x.linked&&x.released===false).length;
+  const unlinked=sites.filter(x=>!x.linked).length;
+  /* ⚠ only shown when there IS something wrong — a panel of zeroes trains you
+     to stop reading it, and then it cannot warn you */
+  const wrong=[
+    unlinked?[unlinked+' app'+(unlinked===1?'':'s')+' with no repo linked','#/apps']:null,
+    neverBuilt?[neverBuilt+' linked app'+(neverBuilt===1?'':'s')+' never built','#/apps']:null,
+    sum.failed?[sum.failed+' thing'+(sum.failed===1?'':'s')+' failed today','#/log']:null,
+  ].filter(Boolean);
+  const tagsFor=ref=>((d.tags||[]).filter(t=>t.ref===ref)
+    .map(t=>`<span class="tag${noteClass(t.color)}"><span class="tag-t">${esc(t.label)}</span></span>`).join(''));
+  const dayLabel=x=>{try{return new Date(x+'T12:00:00Z').toLocaleDateString('en-IN',
+      {weekday:'short',day:'numeric',month:'short',year:'numeric'});}catch(e){return x;}};
+  const facts=[
+    ['made_sites','new site'],['made_apps','app made'],['made_repos','repo made'],
+    ['gone_apps','app deleted'],['gone_repos','repo deleted'],
+    ['builds','build'],['deploys','deploy'],['tagged','tag put on'],
+  ].filter(([k])=>Number(sum[k]||0)>0)
+   .map(([k,l])=>`<span class="hm-fact"><b>${sum[k]}</b> ${esc(l)}${Number(sum[k])===1?'':'s'}</span>`).join('');
+
+  body.innerHTML=`
+    <div class="set-stack">
+      <section class="panel sub span-all">
+        <div class="sub-head"><h3>${ic('sliders')}Your fleet</h3></div>
+        <div class="hm-cards">
+          ${card(sites.length,'apps','#/apps')}
+          ${card(repos.length,'repos','#/repos')}
+          ${card(combos.length,'paired accounts','#/accounts')}
+          ${card((S.state&&S.state.tags||[]).length,'tags','#/apps')}
+        </div>
+        ${wrong.length?`<div class="hm-wrong">${wrong.map(([t,h])=>
+          `<a class="hm-warn" href="${h}">${ic('alert','ic ic-s')}${esc(t)}</a>`).join('')}</div>`:''}
+      </section>
+
+      <section class="panel sub span-all">
+        <div class="sub-head">
+          <h3>${ic('clock')}Day book</h3>
+          <span class="sub-acts">
+            <label class="field hm-daypick"><span class="vh">Day</span>
+              <select id="hmDay">${(d.days||[]).map(x=>
+                `<option value="${esc(x.day)}"${x.day===HM.day?' selected':''}>${esc(dayLabel(x.day))}${
+                  x.day===d.today?' — today':''}</option>`).join('')||
+                `<option value="${esc(HM.day||'')}">${esc(dayLabel(HM.day||''))}</option>`}</select>
+            </label>
+          </span>
+        </div>
+        ${d.error?`<p class="empty">${esc(d.error)}</p>`:`
+        <p class="hm-facts">${facts||'<span class="at-dim">Nothing was done on this day.</span>'}</p>
+        ${touched.length?`<div class="hm-touched">
+          <h4 class="acct-h">What was touched (${touched.length})</h4>
+          <ul class="hm-list">${touched.map(t=>`<li>
+            <span class="nm">${esc(t.ref)}</span>${tagsFor(t.ref)}
+            <span class="at-dim">${t.n} action${t.n===1?'':'s'}</span></li>`).join('')}</ul>
+        </div>`:''}
+        <form id="hmNoteForm" class="keyform mt-4">
+          <div class="frow">
+            <label class="field"><span>About</span>
+              <select id="hmRef">
+                <option value="">The day itself</option>
+                ${touched.map(t=>`<option value="${esc(t.ref)}">${esc(t.ref)}</option>`).join('')}
+              </select>
+            </label>
+            <label class="field grow"><span>What happened, in your words</span>
+              <input id="hmNote" maxlength="4000" autocomplete="off"
+                placeholder="e.g. swapped the hero image, client asked for the old price back"></label>
+            <button type="submit" class="btn btn-primary">${ic('plus','ic ic-s')}Add to the day book</button>
+          </div>
+        </form>
+        ${notes.length?`<ul class="hm-notes">${notes.map(n=>`
+          <li class="hm-note">
+            <span class="note-text">${esc(n.note)}</span>
+            <span class="hm-meta">${n.ref_label?`<span class="nm">${esc(n.ref_label)}</span>`:''}
+              <span class="at-dim">${esc(n.actor)}</span>
+              <button type="button" class="btn btn-ghost btn-sm" data-act="rm-diary"
+                data-id="${esc(String(n.id))}" title="Remove this note">${ic('x','ic ic-s')}</button></span>
+          </li>`).join('')}</ul>`
+        :'<p class="empty">No notes on this day yet — the line above writes one.</p>'}`}
+      </section>
+    </div>`;
+}
+
+/* 🛑 Home draws into #hmBody, and the big action dispatcher is bound to
+   #setBody — a button here never reached it. Its own listener, on its own
+   container. */
+document.addEventListener('click',async e=>{
+  const b=e.target.closest&&e.target.closest('[data-act="rm-diary"]');
+  if(!b||b.disabled)return;
+  e.preventDefault();
+  busy(b,true,'');
+  try{ await api('/api/diary/'+b.dataset.id,{method:'DELETE'}); await hmLoad(HM.day); toast('Note removed.','ok'); }
+  catch(ex){ toast(ex.message,'err'); busy(b,false); }
+});
+
+/* the dropdowns and the note form */
+document.addEventListener('change',e=>{
+  if(e.target&&e.target.id==='hmJump'&&e.target.value){
+    const to=e.target.value; e.target.value='';
+    location.hash=to.replace(/^#/,'');
+  }
+  if(e.target&&e.target.id==='hmDay'){ hmLoad(e.target.value); }
+});
+document.addEventListener('submit',async e=>{
+  if(!e.target||e.target.id!=='hmNoteForm')return;
+  e.preventDefault();
+  const note=$('#hmNote'), ref=$('#hmRef');
+  const text=String(note.value||'').trim();
+  if(!text){ toast('Write something first.','err'); note.focus(); return; }
+  const btn=e.target.querySelector('button[type=submit]');
+  busy(btn,true,'Saving…');
+  try{
+    /* an app named in the log may since have been deleted — the LABEL is what is
+       stored, so the line survives the app it is about */
+    const site=((S.state&&S.state.sites)||[]).find(x=>x.label===ref.value||x.app===ref.value);
+    await api('/api/diary',{method:'POST',body:{
+      day:HM.day, note:text,
+      ref_kind:ref.value?(site?'app':'repo'):null,
+      ref_id:site?site.id:null,
+      ref_label:ref.value||null}});
+    note.value='';
+    await hmLoad(HM.day);
+    toast('Written into the day book.','ok');
+  }catch(ex){ toast(ex.message,'err'); busy(btn,false); }
 });
 
 /* ======================================================================

@@ -1924,3 +1924,49 @@ button to SHOW ALL, and COLLAPSE all"*.
 - ✅ Falsifiability proved: putting `twHas` back to the old sense turns 5 assertions red.
 
 **Tests:** 623 panel + 69 bot · `foldall.py` 16/16 · `fetchbtn.py` 8/8 · `pickerbar.py` 36/36.
+
+## v35 (2026-08-29) — HOME, and the day book
+
+His ask: *"a Home page ... that has links to everything in a dropdown list where I'd want to go (file
+manager, app or that repo)"* and *"a Notes section maybe, some kind of daily diary that captures
+everything and records how many sites were used, and actually we also delete some apps everyday, so
+it will be out log file too"*.
+
+### ⭐ The decision that shaped it: the day's FACTS are never typed and never stored twice
+`audit_log` already holds every create, delete, build and deploy with its target, so the day book
+**reads the day back out of it** and stores only his words. A number on Home therefore cannot
+disagree with the log it came from, and yesterday is as complete as today without anyone having
+remembered to write anything. Grouping is `datetime(at,'+5 hours','+30 minutes')` — the IST day he
+lives in, done in SQL, so a note written at 02:00 IST belongs to that morning.
+🛑 **`diary.ref_label` is TEXT, not just an id** — he deletes apps every day, and a diary line about
+an app that no longer exists is exactly the line worth keeping. Proved by a test that deletes the app
+and reads the note back.
+
+### What Home carries
+- **Go to** — one dropdown: screens · apps (an app goes to **its files**, not to a list; an unlinked
+  one goes to Apps because it has no files) · repos. It resets after each pick so the same place can
+  be chosen twice.
+- **Counts that are links** — apps · repos · paired accounts · tags. The test asserts the app count
+  equals what the Apps screen actually renders, so the two cannot drift.
+- **Only what is wrong** — apps with no repo, linked apps never built, anything that failed today.
+  ⚠️ Hidden entirely when there is nothing to say: a panel of zeroes teaches you to stop reading it.
+- **The day book** — the day's facts on one line, what was touched (with each app's tags), a day
+  picker over every day that has anything on it, and a note per line: about the day, or about one of
+  the things touched that day. A VA can delete their own note; only a master can delete someone else's.
+
+### Traps hit
+- 🛑 **The action dispatcher is bound to `#setBody`.** Home draws into `#hmBody`, so its delete button
+  never fired — silently, no error. Home has its own listener now. ⚠️ Anything new outside Settings
+  needs its own, or it is dead on arrival.
+- ⚠️ A new TABLE is not created by `runMigrations` (that only ADDs COLUMNS). `retryAfterMigration`
+  handles it on the error path, but with the cron now gone there is no background pass to fall back
+  on, so `diary` was **created on the live database by hand** as well.
+- ⚠️ Unknown addresses and a bare `#` now land on **Home**, not Deploy.
+- ✅ Falsifiability proved: landing on Deploy again turns 3 assertions red.
+
+**Deploy stays.** He asked whether to remove it; the log said he used it **20 times that day**, more
+than any other day and 34 times against 4 File Manager edits. What was wrong was that it sat in the
+*home slot* doing a job that is not "home". It keeps its own page, second in the rail.
+
+**Tests:** 640 panel + 69 bot · `home.py` 19/19 · `foldall.py` 16/16 · `fetchbtn.py` 8/8 ·
+`pickerbar.py` 36/36.
