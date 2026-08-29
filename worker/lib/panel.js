@@ -1370,10 +1370,22 @@ export async function refreshCombos(env, actor, comboId, opts) {
     // Read what is already stored ONCE, rather than two lookups per repo.
     // With five accounts' worth of repos that was dozens of separate hops
     // to a database in another region, every one of them waiting for the last.
-    const knownRepos = (await q(env, `SELECT id, owner, name, label FROM repos`).all()).results || [];
+    // ⚡ CEILING FIX (29 Aug): these were four separate awaits per account, and
+    // matchRepo added one more per unlinked app. At nine accounts a single cron
+    // tick crossed Cloudflare's ~50-subrequest ceiling and simply stopped — the
+    // accounts read LAST never got their apps, which is exactly what happened to
+    // the unpaired hildalyons key. A D1 batch is ONE subrequest for all four.
+    const [reposRes, knownAppsRes, labelsRes, connReposRes] = await env.DB.batch([
+      env.DB.prepare(`SELECT id, owner, name, label FROM repos`),
+      env.DB.prepare(`SELECT id, heroku_name, repo_id FROM apps WHERE connection_id=?`).bind(c.hid ?? -1),
+      env.DB.prepare(`SELECT label FROM apps`),
+      env.DB.prepare(`SELECT id, name FROM repos WHERE connection_id=?`).bind(c.gid ?? -1),
+    ]);
+    const knownRepos = reposRes.results || [];
     const byOwnerName = new Map(knownRepos.map((r) => [`${r.owner}/${r.name}`, r.id]));
     const usedLabels = new Set(knownRepos.map((r) => r.label));
     const inserts = [];
+    let newRepos = 0;
     for (const r of repos) {
       const key = `${r.owner}/${r.name}`;
       // 🛑 A KNOWN repo used to be skipped outright, so anything read from GitHub
@@ -1387,6 +1399,7 @@ export async function refreshCombos(env, actor, comboId, opts) {
         continue;
       }
       const label = usedLabels.has(r.name) ? r.full_name : r.name;
+      newRepos++;
       byOwnerName.set(key, null);
       usedLabels.add(label);
       inserts.push(env.DB.prepare(
@@ -1404,11 +1417,15 @@ export async function refreshCombos(env, actor, comboId, opts) {
     // in a row. A refresh took 14.4 seconds. Read what is already stored ONCE
     // per account, then send the writes as ONE batch, exactly as the repo loop
     // above already does.
-    const knownApps = new Map(
-      ((await q(env, `SELECT id, heroku_name, repo_id FROM apps WHERE connection_id=?`, c.hid).all())
-        .results || []).map((r) => [r.heroku_name, r]));
-    const usedAppLabels = new Set(
-      ((await q(env, `SELECT label FROM apps`).all()).results || []).map((r) => r.label));
+    const knownApps = new Map((knownAppsRes.results || []).map((r) => [r.heroku_name, r]));
+    const usedAppLabels = new Set((labelsRes.results || []).map((r) => r.label));
+    // matchRepo() was a database call PER APP. Same rows, read once above.
+    // ⚠ Only re-read when this account actually GAINED a repo: a repo inserted
+    // a moment ago is not in the batch above, and an app must still be able to
+    // link to it on the same pass. Steady state inserts nothing and pays nothing.
+    const connRepos = newRepos
+      ? ((await q(env, `SELECT id, name FROM repos WHERE connection_id=?`, c.gid ?? -1).all()).results || [])
+      : (connReposRes.results || []);
     const appWrites = [];
     const linkedNow = [];          // {name, repo} — logged after the batch lands
     for (const a of apps) {
@@ -1420,7 +1437,7 @@ export async function refreshCombos(env, actor, comboId, opts) {
                   heroku_created_at=COALESCE(?, heroku_created_at) WHERE id=?`)
           .bind(a.web_url || null, c.id, a.released_at || null, a.created_at || null, known.id));
         if (!known.repo_id) {
-          const match = await matchRepo(env, c.gid, a.name);
+          const match = matchRepoIn(connRepos, a.name);
           if (match) {
             appWrites.push(env.DB.prepare(`UPDATE apps SET repo_id=? WHERE id=?`).bind(match.id, known.id));
             summary.linked++;
@@ -1429,7 +1446,7 @@ export async function refreshCombos(env, actor, comboId, opts) {
         }
         continue;
       }
-      const match = await matchRepo(env, c.gid, a.name);
+      const match = matchRepoIn(connRepos, a.name);
       // the label is unique across the table, so a clash has to be settled here
       // rather than by asking the database once per app
       const label = usedAppLabels.has(a.name) ? `${a.name} (${c.hacct})` : a.name;
@@ -1554,6 +1571,11 @@ async function recordBuildpack(env, appId, repo, actor, known, headSha) {
 /** Match a Heroku app to a repo on the same account by name, loosely. */
 async function matchRepo(env, githubConnId, appName) {
   const rows = (await q(env, `SELECT id, name FROM repos WHERE connection_id=?`, githubConnId).all()).results || [];
+  return matchRepoIn(rows, appName);
+}
+
+/** The same match, against rows already in memory — no database call. */
+function matchRepoIn(rows, appName) {
   const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
   const target = norm(appName);
   let hit = rows.find((r) => norm(r.name) === target);

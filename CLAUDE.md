@@ -1843,3 +1843,29 @@ the only thing that actually retires them.
 **Nothing was deployed.** The live panel still answers v32 at 491,985 bytes — byte-identical to
 `panel/dist/deploy/index.html` — and the guide page still returns 200. Tests re-run before the
 commit: **623 panel + 69 bot, 0 failures**.
+
+## 2026-08-29 — the subrequest ceiling came back, and it eats the LAST account
+
+**His report:** two Heroku accounts showed no apps for 30 minutes while every other account was
+fine. Measured, not guessed: `hildalyons9378` held **5** on Heroku and showed **1**;
+`johnpotter8436` held **1** and showed **1** — that one was never wrong.
+
+🛑 **Cause:** a discovery tick costs far more D1 round trips than v32's note claimed. Per account it
+did **four separate reads** (all repos, that account's apps, all labels) plus a **database call per
+unlinked app** inside `matchRepo`, then a write batch. At nine accounts that is ~58 subrequests
+against Cloudflare's ~50 ceiling, so the tick died partway through — and the accounts read **last**
+are the ones that never get their apps. An unpaired key sorts last, which is why this one looked
+account-specific. **It is not: it is whoever is at the end of the list.**
+
+**Fix:** the four reads are one `env.DB.batch()` — D1 counts a batch as ONE subrequest — and
+`matchRepo` matches against rows already in memory (`matchRepoIn`). ~58 → ~34 per tick.
+⚠️ The first attempt broke a test and the test was RIGHT: hoisting the repo read above the repo
+inserts meant an app could no longer link to a repo discovered on the same pass. It now re-reads
+**only when that account actually gained a repo** — steady state pays nothing.
+
+**Verified after deploy:** the next tick took `hildalyons9378` from 1 app to **5**, and all **8
+Heroku accounts now match Heroku exactly, 0 mismatches**. Tests 623 panel + 69 bot.
+⚠️ Also paired `hildalyons9378`'s two keys (combo 10) — it was the only unpaired account. That alone
+did NOT fix it; the ceiling did.
+⚠️ **This will return as accounts are added.** ~34 of 50 at nine accounts leaves room for about four
+more. The real answer when it comes back is to read a slice of accounts per tick, not all of them.
