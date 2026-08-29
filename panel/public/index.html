@@ -2024,7 +2024,7 @@ select[aria-busy="true"]{opacity:.55;cursor:progress}
 <template id="kb-apps">
   <p class="lead">Every card on the Deploy screen is a real Heroku app from your paired accounts. An app becomes updatable the moment it is linked to a GitHub repo — that repo is where each sent file is saved as one recorded change, and the app rebuilds from it.</p>
   <h3>Refresh from Heroku</h3>
-  <p>The panel pulls your apps automatically when a pairing is made. If you add an app or repo outside the panel, press <em>Refresh from Heroku</em> — on the Deploy screen, or on <em>Apps</em> or <em>Repos</em>. It re-reads everything and reports what came back: how many apps, how many repos, how many linked.</p>
+  <p>The panel pulls your apps when a pairing is made, and never again on its own &mdash; nothing runs in the background. To pull ONE account, press <em>Fetch apps</em> on its row under <em>Accounts &amp; keys</em>. To pull them all, press <em>Refresh from Heroku</em> — on the Deploy screen, or on <em>Apps</em> or <em>Repos</em>. It re-reads everything and reports what came back: how many apps, how many repos, how many linked.</p>
   <h3>Link an app to a repo</h3>
   <ol class="steps">
     <li>An app with no repo shows <em>Needs a repo</em> on its card and cannot be ticked for a deploy.</li>
@@ -7024,6 +7024,7 @@ function renderAccountsTab(){
       <span class="at-cell">${c.apps??0}</span>
       <span class="at-cell">${c.created_at?esc(ago(c.created_at)):'<span class="at-dim">—</span>'}${newMark(c.created_at)}</span>
       <span class="at-acts">
+        <button type="button" class="btn btn-secondary btn-sm" data-act="fetch-combo" data-id="${esc(String(c.id))}">${ic('refresh','ic ic-s')}Fetch apps</button>
         <button type="button" class="btn btn-danger btn-sm" data-act="rm-combo" data-id="${esc(String(c.id))}">${S.armed===('c:'+c.id)?'Confirm remove':'Remove'}</button>
       </span>
     </div>`).join('');
@@ -8561,6 +8562,25 @@ $('#setBody').addEventListener('click',async e=>{
   if(act==='rm-key'){
     const row=b.closest('.acct-row');
     openKeyRemoveDialog(row.dataset.kind,row.dataset.id);
+    return;
+  }
+  if(act==='fetch-combo'){
+    /* One account, on demand. Automatic discovery is OFF by design: a tick that
+       runs while nobody is working spends request budget for nothing, and at
+       nine accounts a single tick crossed Cloudflare's subrequest ceiling and
+       dropped whichever account it reached last. Asking for one account is a
+       handful of calls and it either works or it says why. */
+    if(b.disabled)return;
+    busy(b,true,'Asking Heroku…');
+    try{
+      const r=await api('/api/refresh',{method:'POST',body:{combo_id:id}   /* raw: the server does the Number(), and offline ids are strings */});
+      invalidateRepos();
+      await refreshState();
+      const errs=(r&&r.errors)||[];
+      if(errs.length)toast(errs.join(' · '),'err');
+      else toast('Read '+((r&&r.apps)||0)+' app'+(((r&&r.apps)||0)===1?'':'s')+' from Heroku.','ok');
+      renderSettings();
+    }catch(ex){toast(ex.message,'err');busy(b,false);}
     return;
   }
   if(act==='rm-combo'){

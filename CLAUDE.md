@@ -1869,3 +1869,28 @@ Heroku accounts now match Heroku exactly, 0 mismatches**. Tests 623 panel + 69 b
 did NOT fix it; the ceiling did.
 ⚠️ **This will return as accounts are added.** ~34 of 50 at nine accounts leaves room for about four
 more. The real answer when it comes back is to read a slice of accounts per tick, not all of them.
+
+## v33 (2026-08-29) — automatic discovery is OFF; each pairing fetches on its own button
+
+**His call, and the reason is his:** *"lets keep it manual itself ... otherwise we're just exceeding
+requests when we're not even working and during work, there's a whole fuck up"* — and
+*"put buttons on each of the account separately to fetch from heroku manually"*.
+
+- 🛑 **The `*/2` cron is gone.** ⚠️ `wrangler deploy` does NOT remove a schedule when you delete it
+  from `wrangler.json` — the old trigger survived the deploy and had to be cleared with
+  `PUT /workers/scripts/deploy-bot/schedules` and an empty array. Verified: `schedules: []`.
+- ⭐ **Every pairing row under Accounts & keys now carries its own "Fetch apps".** It calls the
+  existing `POST /api/refresh {combo_id}` — one account, a handful of calls, and it either says how
+  many apps it read or says why it could not. Nothing runs in the background any more.
+- ⚠️ Caught by the new browser test, not by reading: the handler sent `Number(id)`, which the offline
+  ids (`'c1'`) do not survive — and the server does its own `Number()` anyway. It sends the raw id
+  now, exactly as the progressive refresh already did. `test/browser/fetchbtn.py`, 8/8.
+- ⚠️ `test/browser/smoke.py` (and the other pre-redesign suites) fail on ids that no longer exist —
+  they are stale, NOT a regression from this change. Worth retiring or rewriting.
+
+### 🛑 What I got wrong today, recorded so it is not repeated
+I told him `johnpotter8436` "was never wrong" and guessed his apps must be under another email.
+**The account really did hold only `dropio` at 12:02** — but he created four more at **12:18**, after
+I looked, and by then my sentence was stale and read as calling him mistaken.
+⚠️ **A count read from a live vendor is true for a moment, not for the conversation.** Say when it
+was read, and never explain a gap by guessing at what he did.

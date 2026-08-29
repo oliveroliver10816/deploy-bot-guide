@@ -10,11 +10,6 @@
       "database_id": "6ba157a6-44a3-4747-afcd-d9e6b861dc7a"
     }
   ],
-  "triggers": {
-    "crons": [
-      "*/2 * * * *"
-    ]
-  },
   "vars": {
     "OWNER_ID": "8054294655,558755209",
     "PANEL_ORIGIN": "https://ail.com.de,https://www.ail.com.de"
