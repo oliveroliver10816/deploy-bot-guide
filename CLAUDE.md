@@ -1894,3 +1894,33 @@ I told him `johnpotter8436` "was never wrong" and guessed his apps must be under
 I looked, and by then my sentence was stale and read as calling him mistaken.
 ⚠️ **A count read from a live vendor is true for a moment, not for the conversation.** Say when it
 was read, and never explain a gap by guessing at what he did.
+
+## v34 (2026-08-29) — every tree opens CLOSED, Show all / Collapse all, per-account Fetch on Apps
+
+His three: *"we can also have this on the APPS page too… (Must appear on collapsed card too)"* ·
+*"wherever there are collapsible cards… default view is COLLAPSED Cards"* · *"add a button which has
+button to SHOW ALL, and COLLAPSE all"*.
+
+- ⭐ **The fold set was INVERTED, not defaulted.** It used to hold what was *folded*, so anything new
+  arrived open; it now holds what is *open*, so anything new arrives closed. ⚠️ The localStorage key
+  was renamed `gitku.collapsed` → **`gitku.open`** with it — reusing it would have read every stored
+  fold backwards and opened exactly the cards someone had closed.
+- ⭐ **Fetch apps on each account heading of the Apps screen**, drawn on the heading itself so it is
+  reachable while the account is still shut. The heading knows only an email, so `comboIdForHk()`
+  maps email → Heroku key → pairing; an account with no pairing gets no button rather than a broken one.
+- ⭐ **Show all / Collapse all** on Apps and Repos. The keys are read back off the **DOM**
+  (`[data-tw]`), so they work on any tree without knowing anything about it. ⚠️ Opening is a LOOP:
+  a child twisty does not exist until its parent is open, so one pass opens only the top level.
+- 🛑 **Two things the inversion quietly broke, both found by tests, not by reading:**
+  the File Manager's expand button cleared its own flag and opened **nothing** (every node was closed
+  on its own account) — it calls `twOpenAll()`/`twCloseAll()` now; and `S.pk.collapsed` still started
+  `false`, so the control offered *"Collapse every account"* over an already-collapsed tree and one
+  press appeared to do nothing. It starts `true`.
+- ⚠️ `test/browser/pickerbar.py` asserted *"the tree starts full"* — that was the OLD intent. Rewritten
+  to assert it starts collapsed, that the button agrees with the screen, and that one press opens it.
+  36/36. **Not deleted — re-aimed.**
+- ⚠️ The first version of `foldall.py` waited for a toast NODE, which exists empty before the reply
+  lands, and passed vacuously. It waits on the TEXT.
+- ✅ Falsifiability proved: putting `twHas` back to the old sense turns 5 assertions red.
+
+**Tests:** 623 panel + 69 bot · `foldall.py` 16/16 · `fetchbtn.py` 8/8 · `pickerbar.py` 36/36.

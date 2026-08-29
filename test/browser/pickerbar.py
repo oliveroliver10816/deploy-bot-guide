@@ -54,8 +54,18 @@ with sync_playwright() as pw:
     r.ok(pg.locator("#fvPickBar .iconbtn:not([aria-label])").count() == 0,
          "and every button is named for a screen reader")
     r.ok(not pg.locator("#fvPkSearchWrap").is_visible(), "the search box starts hidden behind its icon")
+    # ⚠ 29 Aug — his change: EVERY tree now opens collapsed. The accounts are
+    # still there (you can see where things live); only the repos are folded away.
+    r.ok(repos(pg) == 0 and accts(pg) == 3, "the tree starts COLLAPSED",
+         f"{repos(pg)} repos / {accts(pg)} accounts")
+    r.ok(pg.get_attribute("#fvPkCollapse", "aria-pressed") == "true",
+         "and the button agrees with the screen it is sitting on")
+    r.ok("Expand" in (pg.get_attribute("#fvPkCollapse", "title") or ""),
+         "so it offers Expand, not Collapse", pg.get_attribute("#fvPkCollapse", "title"))
+    pg.click("#fvPkCollapse")
+    wait_for(pg, lambda: repos(pg) > 0)
     base_repos, base_accts = repos(pg), accts(pg)
-    r.ok(base_repos == 5 and base_accts == 3, "the tree starts full",
+    r.ok(base_repos == 5 and base_accts == 3, "one press opens the whole tree",
          f"{base_repos} repos / {base_accts} accounts")
 
     print("\n-- collapse --")

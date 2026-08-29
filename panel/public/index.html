@@ -4941,7 +4941,11 @@ function renderFiles(){
     /* v29: search + collapse over that tree. State lives on S.pk so it survives the
        re-render; filtering happens on the DATA, not by hiding rows, so the counts
        stay honest about what is actually on screen. */
-    S.pk=S.pk||{q:'',collapsed:false,find:false};
+    /* ⚠ 29 Aug: collapsed:true so the BUTTON agrees with the SCREEN. The default
+   fold is now closed, and leaving this flag false left the control offering
+   "Collapse every account" over an already-collapsed tree — one press then
+   appeared to do nothing at all. */
+    S.pk=S.pk||{q:'',collapsed:true,find:false};
     const pkPanel=$('#fvPickPanel'),pkEmpty=$('#fvPickEmpty');
     const pq=String(S.pk.q||'').trim().toLowerCase();
     const pkHit=g=>!pq||g.repo.toLowerCase().includes(pq)||g.owner.toLowerCase().includes(pq)
@@ -6084,7 +6088,13 @@ function pkState(){ return (S.pk=S.pk||{q:'',collapsed:false,find:false}); }
    ⚠️ Keys are stored, not cleared, when a repo disappears: a stale key hides
    nothing that exists, and a pruner is more code than the problem. Capped so
    the value cannot grow without limit. */
-const TW_KEY='gitku.collapsed', TW_MAX=400;
+/* 🛑 29 Aug — DEFAULT IS NOW COLLAPSED. His words: "on all pages, wherever there
+   are collapsible cards, I want you to make sure that default view is COLLAPSED
+   Cards." The set used to hold what was FOLDED, so anything new arrived open;
+   it now holds what is OPEN, so anything new arrives closed. The key is renamed
+   with it — reusing the old one would have read every stored fold backwards and
+   opened exactly the cards someone had closed. */
+const TW_KEY='gitku.open', TW_MAX=400;
 function twLoad(){
   try{const v=JSON.parse(localStorage.getItem(TW_KEY)||'[]');
       return new Set(Array.isArray(v)?v.slice(0,TW_MAX):[]);}catch(e){return new Set();}
@@ -6098,12 +6108,41 @@ function twSave(){
    twLoad's own try/catch turned that into "nothing is folded". It looked like
    it worked and silently forgot every fold on reload. Load on first use. */
 function twSet(){ if(!S.collapsed)S.collapsed=twLoad(); return S.collapsed; }
-const twHas=k=>twSet().has(k);
+/* twHas(k) still answers the same question — "is this node folded?" — so every
+   call site is unchanged. Only the storage flipped. */
+const twHas=k=>!twSet().has(k);
 function twToggle(k){
   const set=twSet();
   if(set.has(k))set.delete(k);else set.add(k);
   twSave();
 }
+/* Show all / Collapse all. The keys are read back off the SCREEN rather than
+   guessed from the data, so these work on every tree without knowing any of
+   them. Opening is a loop because a child twisty does not exist in the DOM
+   until its parent is open — one pass would open only the top level. */
+function twRerender(){
+  if(S.view==='files')renderFiles();
+  else if(typeof renderSettings==='function')renderSettings();
+}
+const twKeysOnScreen=()=>[...document.querySelectorAll('[data-tw]')].map(e=>e.dataset.tw);
+function twOpenAll(){
+  const set=twSet();
+  for(let i=0;i<8;i++){
+    const keys=twKeysOnScreen();
+    const fresh=keys.filter(k=>!set.has(k));
+    if(!fresh.length)break;
+    for(const k of fresh)set.add(k);
+    twRerender();
+  }
+  twSave();twRerender();
+}
+function twCloseAll(){ twSet().clear(); twSave(); twRerender(); }
+/* One pair of buttons, used by every screen that has a tree. */
+const twAllBtns=()=>`<button type="button" class="btn btn-ghost btn-sm" data-act="tw-all"
+    title="Open every card on this page">${ic('plus','ic ic-s')}Show all</button>
+  <button type="button" class="btn btn-ghost btn-sm" data-act="tw-none"
+    title="Close every card on this page">${ic('x','ic ic-s')}Collapse all</button>`;
+
 /* The twisty is ALWAYS a sibling of whatever opens the row, never a wrapper
    around it — so a mis-click can never open a repo you only meant to fold. */
 function twBtn(k,label,forced){
@@ -6133,7 +6172,13 @@ document.addEventListener('click',e=>{
   }
 });
 $('#fvPkCollapse').addEventListener('click',()=>{
-  const k=pkState();k.collapsed=!k.collapsed;renderFiles();
+  /* ⚠ 29 Aug: once the default became COLLAPSED, clearing this flag alone
+     expanded nothing — every node was closed on its own account. Expanding here
+     has to actually open them, and collapsing has to forget them, or the button
+     reads as broken in one direction. */
+  const k=pkState();k.collapsed=!k.collapsed;
+  if(k.collapsed)twCloseAll();else twOpenAll();
+  renderFiles();
   announce(k.collapsed?'Accounts collapsed.':'Accounts expanded.');
 });
 $('#fvPkFind').addEventListener('click',()=>{
@@ -7419,6 +7464,13 @@ function renderAppsTab(){
      repo dropdown shows owner/name grouped by GitHub account */
   const hkList=(S.state.accounts&&S.state.accounts.heroku)||[];
   const hkEmail=s=>{const a=hkList.find(x=>x.id===s.account||x.account===s.account);return a?a.email:'';};
+  /* An account heading knows only the email it is titled with; the refresh is
+     addressed by PAIRING. Map one to the other here rather than in the markup. */
+  const comboIdForHk=email=>{
+    const a=hkList.find(x=>x.email===email); if(!a)return null;
+    const c=((S.state&&S.state.combos)||[]).find(x=>String(x.heroku_conn_id)===String(a.id));
+    return c?c.id:null;
+  };
   const repoOpts=s=>(s.linked?'<option value="">No repo</option>'
       :'<option value="" selected>Pick a repo — it links straight away</option>')
     +repoOptionsHTML(repos,r=>!!(s.linked&&r.owner===s.owner&&r.name===s.repo),false,
@@ -7500,11 +7552,19 @@ function renderAppsTab(){
     ? sites.map(rowFor).join('')
     : accts.map(k=>{
         const list=byAcct.get(k), off=twHas('apps:'+k);
+        /* the heading is drawn open or closed, so a per-account Fetch sits
+           here and is reachable without opening the account first — his ask:
+           "Must appear on collapsed card too" */
+        const cid=comboIdForHk(k);
         return `<div class="apptbl-group">
             ${twBtn('apps:'+k,'the apps in '+k)}
             ${ic('key','ic ic-s')}<span class="ag-name">${esc(k)}</span>
             ${off?foldedTagRow(list):''}
             <span class="ag-n">${list.length} app${list.length===1?'':'s'}</span>
+            ${cid?`<button type="button" class="btn btn-ghost btn-sm ag-fetch"
+              data-act="fetch-combo" data-id="${esc(String(cid))}"
+              title="Ask Heroku what this account holds right now"
+              >${ic('refresh','ic ic-s')}Fetch apps</button>`:''}
           </div>${off?'':list.map(rowFor).join('')}`;
       }).join('');
   const hk=(S.state.accounts&&S.state.accounts.heroku)||[];
@@ -7513,7 +7573,8 @@ function renderAppsTab(){
       <section class="panel sub span-all">
         <div class="sub-head">
           <h3>${ic('sliders')}Your apps</h3>
-          <button type="button" class="btn btn-secondary btn-sm" data-act="refresh-apps">${ic('refresh','ic ic-s')}Refresh from Heroku</button>
+          <span class="sub-acts">${accts.length>1?twAllBtns():''}
+          <button type="button" class="btn btn-secondary btn-sm" data-act="refresh-apps">${ic('refresh','ic ic-s')}Refresh from Heroku</button></span>
         </div>
         <p class="p-dim">Every Heroku app on your paired accounts, pulled automatically — newest first. Click a column header to sort by it; click it again to flip the direction. A <em>tag</em> is written once and clicked onto any app; the × on a tag takes it off that app. <em>Created on</em> is Heroku’s own date; <em>Last updated</em> is when Heroku last released the app, as of your last <em>Refresh from Heroku</em>. <em>Unlink</em> makes an app forget its repo so a different one can be chosen — nothing is deleted. <em>Remove…</em> opens the choices for getting rid of it.</p>
         ${sites.length?`
@@ -7632,6 +7693,7 @@ function renderReposTab(){
         <div class="sub-head">
           <h3>${ic('branch')}Your repos <span class="p-dim">(on GitHub)</span></h3>
           <span class="sub-acts">
+            ${twAllBtns()}
             ${totalFed?`<button type="button" class="btn btn-primary btn-sm" data-act="build-all"
               title="Rebuild every app from what is in its repo right now. No files are changed."
               >${ic('send','ic ic-s')}Build every app (${totalFed})</button>`:''}
@@ -8564,6 +8626,8 @@ $('#setBody').addEventListener('click',async e=>{
     openKeyRemoveDialog(row.dataset.kind,row.dataset.id);
     return;
   }
+  if(act==='tw-all'){ twOpenAll(); return; }
+  if(act==='tw-none'){ twCloseAll(); return; }
   if(act==='fetch-combo'){
     /* One account, on demand. Automatic discovery is OFF by design: a tick that
        runs while nobody is working spends request budget for nothing, and at
