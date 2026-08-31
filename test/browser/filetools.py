@@ -21,6 +21,13 @@ with sync_playwright() as pw:
 
     print("\n-- every repo, as a tree --")
     pg.click('.nav-item[href="#/files"]')
+    pg.wait_for_timeout(600)
+    # ⚠ 31 Aug: every tree opens COLLAPSED since v34. This suite is not about
+    # folds — open the picker and carry on. (Fold behaviour: foldall / fmclicks.)
+    try:
+        pg.click("#fvPkCollapse")
+    except Exception:
+        pass
     wait_for(pg, lambda: pg.locator(".repopick .ro-repo").count() > 0)
     shape = pg.evaluate("""()=>[...document.querySelectorAll('.ro-acct')].map(a=>({
         login:(a.querySelector('.ro-login')||{}).innerText||'',

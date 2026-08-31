@@ -2003,3 +2003,39 @@ states — the first version of the sweep passed vacuously on that screen. It co
 
 **Tests:** 640 panel + 69 bot · fmclicks 22/22 · home 19/19 · foldall 16/16 · fetchbtn 8/8 ·
 pickerbar 36/36.
+
+## v37 (2026-08-31) — 🛑 TAGS: the colour swatch deleted what you had just typed
+
+His first real use of tags, and his VA had not reported either fault:
+*"When creating a TAG, if I write text and click on the color, text disappears"* ·
+*"if I try to chose from predefined tags, there's no need for extra confirm button… multiple
+confirmations for TAGS isn't needed."*
+
+### The data-loss bug
+`if(sw){ S.tagColor=…; draw(); }` — pressing a colour called `draw()`, which rebuilt the dialog's
+whole `innerHTML`. The typed label went with it. **A colour is a choice about the box, not a reason
+to rebuild the box:** the swatches update their own `aria-pressed` now and nothing else is touched.
+The same redraw ran after toggling an existing tag, so picking one also wiped a half-typed new tag —
+that chip updates itself in place too.
+⚠️ `tagApply()` disables the chip while it works, and the old code got away with never freeing it
+because `draw()` replaced the button outright. `busy(t,false)` must run **before** the in-place
+update, since it restores the html it saved and would otherwise undo it.
+
+### Fewer confirmations
+- The footer said **Done** with a tick, which reads as "confirm my choices". It is **Close** now, and
+  the dialog says every click is already saved.
+- The ordinary "tag made" toast is gone — the tag is visibly on the app, so saying so is noise.
+- ⚠️ **I over-trimmed first:** the *duplicate* warning went too, and a caught test proved it — typing
+  an existing tag then just... nothing. "You already had that tag" is **information, not a
+  confirmation**, and it stays.
+
+### 🛑 v34 had quietly broken SEVEN other suites, and I only found them by running the lot
+Every one arrived at a screen that used to be open and is now collapsed, or landed on Deploy which is
+no longer the landing screen: `tags`, `buildall`, `filetools`, `onerepomanyapps`, `repotree`,
+`paths`, `neverdeployed`. Each now opens what it needs and says why. **A green run of the suites I
+happened to touch proved nothing about the ones I did not.**
+⚠️ Falsifiability proved: putting `draw()` back on the colour press turns 4 assertions red.
+
+**Tests:** 640 panel + 69 bot · every browser suite green — bounds 61 · buildall 33 · fetchbtn 8 ·
+filetools 32 · fmclicks 22 · foldall 16 · home 19 · neverdeployed 10 · onerepomanyapps 15 · paths 9 ·
+pickerbar 36 · repotree 15 · tags 30 · tagsimple 14.

@@ -15,6 +15,11 @@ with sync_playwright() as pw:
     print("\n-- the tree --")
     pg.click('.nav-item[href="#/repos"]')
     wait_for(pg, lambda: pg.locator(".ltbl-repos .ltbl-row").count() > 0)
+    # ⚠ 31 Aug: the apps under each repo are folded away by default since v34,
+    # and a hidden row cannot be clicked. This suite is about the tree's
+    # contents, not its folds — open it.
+    pg.click('[data-act="tw-all"]')
+    pg.wait_for_timeout(800)
     tree = pg.evaluate("""()=>{const out=[];document.querySelectorAll('.ltbl-repos .ltbl-row').forEach(row=>{
         const name=row.querySelector('.nm')?row.querySelector('.nm').innerText.trim():'';
         const kids=row.nextElementSibling&&row.nextElementSibling.classList.contains('repotree')
@@ -40,6 +45,10 @@ with sync_playwright() as pw:
     r.ok(wait_for(pg, lambda: btn.is_disabled()), "the button disables itself while it runs")
     r.ok("Building" in btn.inner_text(), "and says what it is doing", btn.inner_text())
     pg.click('.nav-item[href="#/apps"]')
+    # ⚠ 31 Aug: the Apps tree opens collapsed too — open it before looking for
+    # a row's button, or the row does not exist to be looked at.
+    wait_for(pg, lambda: pg.locator(".apptbl-group").count() > 0)
+    pg.click('[data-act="tw-all"]')
     wait_for(pg, lambda: pg.locator(".apptbl-row").count() > 0)
     same = pg.evaluate("""()=>{const b=[...document.querySelectorAll('.apptbl-row [data-act=build-now]')]
         .filter(x=>x.disabled);return b.length;}""")

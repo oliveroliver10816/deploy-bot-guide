@@ -95,6 +95,13 @@ with sync_playwright() as pw:
     # ------------------------------------------------------- File Manager tree
     print("\n-- the File Manager shows the tree it will change --")
     pg.click('.nav-item[href="#/files"]')
+    pg.wait_for_timeout(600)
+    # ⚠ 31 Aug: every tree opens COLLAPSED since v34. This suite is not about
+    # folds — open the picker and carry on. (Fold behaviour: foldall / fmclicks.)
+    try:
+        pg.click("#fvPkCollapse")
+    except Exception:
+        pass
     wait_for(pg, lambda: pg.locator("#fvPick .ro-repo").count() > 0)
     pg.locator('.ro-open', has_text="brightleaf-web").first.click()
     wait_for(pg, lambda: pg.locator(".fvtree .fvt-app").count() > 0, timeout=15000)

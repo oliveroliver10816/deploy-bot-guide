@@ -20,6 +20,11 @@ with sync_playwright() as pw:
     pg.on("dialog", lambda d: d.accept())
     signin(pg, BASE)
     pg.click('.nav-item[href="#/apps"]')
+    wait_for(pg, lambda: pg.locator(".apptbl-group").count() > 0)
+    # ⚠ 31 Aug: since v34 every tree opens COLLAPSED, so there are no app rows
+    # until something is opened. This suite is about tags, not folds — open it
+    # and carry on. (Its own fold assertions live in foldall.py / fmclicks.py.)
+    pg.click('[data-act="tw-all"]')
     wait_for(pg, lambda: pg.locator(".apptbl-row").count() > 0)
     pg.wait_for_timeout(400)
 
@@ -126,6 +131,11 @@ with sync_playwright() as pw:
     # ------------------------------------- tags on a CLOSED tree ----------
     print("\n-- tags when the tree is shut --")
     pg.click('.nav-item[href="#/files"]')
+    wait_for(pg, lambda: pg.locator("#fvPick .ro-acct").count() > 0)
+    # ⚠ 31 Aug: the picker opens collapsed since v34. These assertions are about
+    # what the tags do when the tree is OPEN, so open it first — the shut case
+    # is asserted a few lines below, and in fmclicks.py.
+    pg.click("#fvPkCollapse")
     wait_for(pg, lambda: pg.locator("#fvPick .ro-repo").count() > 0)
     pg.wait_for_timeout(300)
     r.ok(pg.locator(".tagrow-folded").count() == 0,

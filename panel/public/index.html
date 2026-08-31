@@ -7632,9 +7632,10 @@ function openTagPicker(appId,opener){
         </div>
         <button type="submit" class="btn btn-secondary btn-sm">${ic('plus','ic ic-s')}Make it</button>
       </form>
-      <p class="p-dim tagmanage">To rename or delete a tag for good, use the <strong>Tags</strong> list further down the Apps screen.</p>
+      <p class="p-dim tagmanage">Every click here is saved as you make it &mdash; there is nothing to confirm.
+        To rename or delete a tag for good, use the <strong>Tags</strong> list further down the Apps screen.</p>
       <div class="dlg-actions">
-        <button type="button" class="btn btn-primary" data-close>${ic('check','ic ic-s')}Done</button>
+        <button type="button" class="btn btn-secondary" data-close>${ic('x','ic ic-s')}Close</button>
       </div>`;
     dlg.querySelector('[data-close]').addEventListener('click',()=>dlg.close());
     const f=$('#tagNewForm');
@@ -7652,20 +7653,53 @@ function openTagPicker(appId,opener){
         await refreshState();
         f.label.value='';
         draw();
+        const again=$('#tagNewForm'); if(again&&again.label)again.label.focus();
         if(S.view==='settings')renderSettings();else if(S.view==='deploy')renderDeploy();
-        toast(r.already?'You already had that tag.':'Tag made and put on this app.','ok');
+        /* ⚠ the DUPLICATE case still speaks up — that is information, not a
+           confirmation, and without it the words just vanish and nothing new
+           appears. The ordinary success is silent: the new tag is right there
+           on screen, already on the app. */
+        if(r.already)toast('You already had that tag.','err');
+        else announce('Tag made and put on this app.');
       }catch(ex){ toast(ex.message,'err'); busy(btn,false); }
     });
   };
   draw();
   dlg.addEventListener('click',async e=>{
     const sw=e.target.closest('[data-tagcolor]');
-    if(sw){ S.tagColor=sw.dataset.tagcolor; draw(); const i=$('#tagNewForm').label; if(i)i.focus(); return; }
+    if(sw){
+      /* 🛑 31 Aug — THIS CALLED draw(), WHICH REBUILT THE WHOLE DIALOG AND THREW
+         THE TYPED TEXT AWAY. His report: "if I write text and click on the
+         colour, text disappears." A colour is a choice about the box, not a
+         reason to rebuild the box. Nothing is re-rendered now: the swatches
+         update themselves and the words he typed stay exactly where they are. */
+      S.tagColor=sw.dataset.tagcolor;
+      for(const b of dlg.querySelectorAll('[data-tagcolor]'))
+        b.setAttribute('aria-pressed',b.dataset.tagcolor===S.tagColor?'true':'false');
+      const i=$('#tagNewForm').label; if(i)i.focus();
+      return;
+    }
     const t=e.target.closest('[data-tagtoggle]');
     if(!t)return;
+    /* One press puts a tag on or takes it off, and that IS the save. The chip
+       updates itself for the same reason as above — a redraw here would also
+       wipe a half-typed new tag. */
     const on=t.getAttribute('aria-pressed')!=='true';
     await tagApply(appId,t.dataset.tagtoggle,on,t);
-    draw();
+    /* ⚠ tagApply() disabled the chip; the old code got away with never freeing
+       it because draw() replaced the whole button. Free it FIRST — busy(false)
+       restores the html it saved — and only then write the new state, or the
+       restore would undo the update. */
+    busy(t,false);
+    const site2=(S.state.sites||[]).find(x=>String(x.id)===String(appId))||{};
+    const cur2=(site2.tags||[]).map(String);
+    const nowOn=cur2.includes(String(t.dataset.tagtoggle));
+    const tag=((S.state&&S.state.tags)||[]).find(x=>String(x.id)===String(t.dataset.tagtoggle))||{};
+    t.setAttribute('aria-pressed',nowOn?'true':'false');
+    t.classList.toggle('on',nowOn);
+    t.title=(nowOn?'Take off ':'Put on ')+(tag.label||'');
+    t.innerHTML=(nowOn?ic('check','ic ic-s'):'')
+      +`<span class="tag-t">${esc(tag.label||'')}</span><span class="tag-uses">${tag.uses||0}</span>`;
   });
   dlg.addEventListener('close',()=>{ if(opener&&document.contains(opener))opener.focus(); },{once:true});
   dlg.showModal();

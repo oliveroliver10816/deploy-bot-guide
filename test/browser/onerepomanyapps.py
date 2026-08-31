@@ -18,6 +18,13 @@ with sync_playwright() as pw:
 
     print("\n-- the repo is listed ONCE --")
     pg.click('.nav-item[href="#/files"]')
+    pg.wait_for_timeout(600)
+    # ⚠ 31 Aug: every tree opens COLLAPSED since v34. This suite is not about
+    # folds — open the picker and carry on. (Fold behaviour: foldall / fmclicks.)
+    try:
+        pg.click("#fvPkCollapse")
+    except Exception:
+        pass
     wait_for(pg, lambda: pg.locator("#fvPick .ro-repo").count() > 0)
     names = pg.evaluate("()=>[...document.querySelectorAll('#fvPick .ro-name')].map(x=>x.innerText.trim())")
     r.ok(len(names) == len(set(names)), "no repo appears twice", str(names))

@@ -20,6 +20,10 @@ with sync_playwright() as pw:
     b = pw.chromium.launch(); ctx = b.new_context(viewport={"width": 1680, "height": 1000}); pg = ctx.new_page()
     errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     signin(pg, BASE)
+    # ⚠ 31 Aug: Home is the landing screen since v35 and every tree opens
+    # collapsed since v34 — go where this suite is about, and open it.
+    pg.click('.nav-item[href="#/deploy"]')
+    pg.wait_for_timeout(1200)
 
     print("\n-- a picked folder keeps its name --")
     pg.evaluate(ADD, PICKED)
