@@ -1970,3 +1970,36 @@ than any other day and 34 times against 4 File Manager edits. What was wrong was
 
 **Tests:** 640 panel + 69 bot · `home.py` 19/19 · `foldall.py` 16/16 · `fetchbtn.py` 8/8 ·
 `pickerbar.py` 36/36.
+
+## v36 (2026-08-31) — 🛑 MY v34 BUG: in the File Manager, nothing worked while everything was shut
+
+His screenshot: File Manager, eight accounts, all collapsed, and not one control did anything —
+*"These buttons don't work if all are collapsed. PLEASE FREE ME FROM ALL THESE ISSUES."*
+
+### The cause, and it was mine
+The picker had a **force-collapse flag** (`S.pk.collapsed`) that overrode every node's own state.
+v34 set it to `true` by default so the screen would open collapsed — and **a forced value beats every
+click made afterwards**. Pressing an account's chevron toggled the stored key and then the render
+threw the answer away. The tree could not be opened at all.
+
+**The flag is gone as a force.** Each node answers for itself (closed by default, since v34), and the
+toolbar control is now an **action read off the screen** — it looks at what is actually open and does
+the opposite — so it works from any state and can never offer the action you just took. A search
+still overrides, because a search must never be answered by a collapsed tree.
+
+⚠️ **The lesson, and it is general: a remembered "force everything" flag and a per-node state cannot
+both exist.** One of them silently wins, and it is never the one the user just pressed.
+
+### Why no test caught it
+Every File Manager test **started from the expanded tree** and collapsed as a step. Nothing ever
+entered the screen in the state his screenshot was in. `test/browser/fmclicks.py` now starts there,
+and presses every control from it — one chevron, the toolbar, search, refresh, and opening a repo —
+then repeats the sweep on **Apps and Repos**, because nothing but entering those in the same state
+proves they are clean. 22/22, and re-hiding the rows reproduces his exact symptom in 2 assertions.
+
+⚠️ **Repos hides its app rows with CSS instead of removing them**, so a `.rt-app` count passes in BOTH
+states — the first version of the sweep passed vacuously on that screen. It counts what is visible
+(`offsetParent !== null`).
+
+**Tests:** 640 panel + 69 bot · fmclicks 22/22 · home 19/19 · foldall 16/16 · fetchbtn 8/8 ·
+pickerbar 36/36.

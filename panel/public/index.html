@@ -5221,14 +5221,21 @@ function renderFiles(){
    fold is now closed, and leaving this flag false left the control offering
    "Collapse every account" over an already-collapsed tree — one press then
    appeared to do nothing at all. */
-    S.pk=S.pk||{q:'',collapsed:true,find:false};
+    S.pk=S.pk||{q:'',find:false};
     const pkPanel=$('#fvPickPanel'),pkEmpty=$('#fvPickEmpty');
     const pq=String(S.pk.q||'').trim().toLowerCase();
     const pkHit=g=>!pq||g.repo.toLowerCase().includes(pq)||g.owner.toLowerCase().includes(pq)
       ||g.apps.some(a=>String(a.app||a.label).toLowerCase().includes(pq));
     const shown=groups.filter(pkHit);
-    /* a search must never be answered by a collapsed tree */
-    const pkCollapsed=S.pk.collapsed&&!pq;
+    /* 🛑 31 Aug — THIS USED TO FORCE THE WHOLE TREE SHUT, and a forced value
+       beats every click made afterwards: with v34 defaulting it to true, every
+       account chevron in the File Manager did nothing at all. His report:
+       "These buttons don't work if all are collapsed."
+       The flag is gone as a force. Each node now answers for itself (closed by
+       default, since v34), Collapse all / Show all act on the nodes rather than
+       overriding them, and only a SEARCH still overrides — because a search
+       must never be answered by a collapsed tree. */
+    const pkAnyOpen=owners=>owners.some(ow=>!twHas('acct:'+ow));
     const byOwner=new Map();
     for(const g of shown){ if(!byOwner.has(g.owner))byOwner.set(g.owner,[]); byOwner.get(g.owner).push(g); }
     const owners=[...byOwner.keys()].sort(nameSort);
@@ -5240,8 +5247,11 @@ function renderFiles(){
             cb=$('#fvPkCollapse'),fb=$('#fvPkFind'),sw=$('#fvPkSearchWrap');
       if(lead)lead.innerHTML=`${groups.length} repo${groups.length===1?'':'s'} across ${allOwners} GitHub account${allOwners===1?'':'s'}. <strong>The files belong to the repo</strong> &mdash; a change goes to every app under it and to nothing else. Click a repo to open its files.`;
       if(cnt)cnt.textContent=pq?(shown.length+' of '+groups.length+' repo'+(groups.length===1?'':'s')):'';
-      if(cb){cb.classList.toggle('on',pkCollapsed);cb.setAttribute('aria-pressed',pkCollapsed?'true':'false');
-             cb.title=cb.ariaLabel=pkCollapsed?'Expand every account':'Collapse every account';}
+      /* it reads the tree rather than a flag, so it can never offer the action
+         you just took, and it stays right when you fold accounts one by one */
+      const anyOpen=pkAnyOpen(owners);
+      if(cb){cb.classList.toggle('on',!anyOpen);cb.setAttribute('aria-pressed',anyOpen?'false':'true');
+             cb.title=cb.ariaLabel=anyOpen?'Collapse every account':'Expand every account';}
       if(fb){fb.classList.toggle('on',!!S.pk.find);fb.setAttribute('aria-pressed',S.pk.find?'true':'false');}
       if(sw)sw.classList.toggle('hidden',!S.pk.find);
     }
@@ -5249,12 +5259,12 @@ function renderFiles(){
       :(!shown.length?`<p class="empty">No repo, account or app matches &ldquo;${esc(S.pk.q)}&rdquo;.</p>`
       :`${owners.map(ow=>`
         <div class="ro-acct">
-          <div class="ro-head">${twBtn('acct:'+ow,'the repos in '+ow,pkCollapsed?true:(pq?false:undefined))}${ic('key','ic ic-s')}<span class="ro-login">${esc(ow)}</span>${
+          <div class="ro-head">${twBtn('acct:'+ow,'the repos in '+ow,pq?false:undefined)}${ic('key','ic ic-s')}<span class="ro-login">${esc(ow)}</span>${
             /* folded: the apps under here are invisible, so bring their tags up */
-            (pkCollapsed||(twHas('acct:'+ow)&&!pq))
+            (twHas('acct:'+ow)&&!pq)
               ?foldedTagRow(byOwner.get(ow).reduce((all,g)=>all.concat(g.apps),[])):''
           }<span class="ro-n">${byOwner.get(ow).length} repo${byOwner.get(ow).length===1?'':'s'}</span></div>
-          ${(pkCollapsed||(twHas('acct:'+ow)&&!pq))?'':byOwner.get(ow).map((g,gi,arr)=>`
+          ${(twHas('acct:'+ow)&&!pq)?'':byOwner.get(ow).map((g,gi,arr)=>`
             <div class="ro-repo">
               <span class="ro-tick" aria-hidden="true">${gi===arr.length-1?'└':'├'}</span>
               ${twBtn('repo:'+g.repo,'the apps under '+g.repo,pq?false:undefined)}
@@ -6448,14 +6458,14 @@ document.addEventListener('click',e=>{
   }
 });
 $('#fvPkCollapse').addEventListener('click',()=>{
-  /* ⚠ 29 Aug: once the default became COLLAPSED, clearing this flag alone
-     expanded nothing — every node was closed on its own account. Expanding here
-     has to actually open them, and collapsing has to forget them, or the button
-     reads as broken in one direction. */
-  const k=pkState();k.collapsed=!k.collapsed;
-  if(k.collapsed)twCloseAll();else twOpenAll();
+  /* An ACTION, not a remembered flag. It looks at what is open right now and
+     does the opposite — so it works from any state, including the one his
+     screenshot was in (everything shut, every chevron dead). */
+  const anyOpen=[...document.querySelectorAll('#fvPick [data-tw]')]
+    .some(b=>b.getAttribute('aria-expanded')==='true');
+  if(anyOpen)twCloseAll();else twOpenAll();
   renderFiles();
-  announce(k.collapsed?'Accounts collapsed.':'Accounts expanded.');
+  announce(anyOpen?'Accounts collapsed.':'Accounts expanded.');
 });
 $('#fvPkFind').addEventListener('click',()=>{
   const k=pkState();k.find=!k.find;
