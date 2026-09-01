@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<!-- 🛑 The Worker URL is baked into this file at build time, so a browser holding
+     an old copy calls a server we have moved away from and every action fails with
+     something that reads like a server fault. His host does not apply the
+     .htaccess headers (checked: none of X-Frame-Options / X-Robots-Tag /
+     Referrer-Policy arrive), so the rule has to travel INSIDE the page. -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <title>Gitku</title>
 <script>
 /* Theme is applied BEFORE first paint so a light-theme user never sees a dark

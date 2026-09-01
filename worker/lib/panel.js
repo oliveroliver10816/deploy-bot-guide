@@ -307,6 +307,25 @@ async function vendorStatus(kind, f = fetch) {
  */
 export async function explainVendorError(e, f = fetch) {
   const raw = String((e && e.message) || e);
+  // 🛑 2026-09-01 — the one failure the person reading the screen cannot possibly
+  // diagnose. Gitku moved to its own Cloudflare account because the shared one
+  // was over D1's daily row-read cap. The Worker URL is baked into the panel page
+  // at build time, so a browser holding an OLD copy of that page keeps calling
+  // the OLD Worker — which now answers every request with D1's raw sentence, and
+  // the panel showed it as "Internal server error". It looks like the server is
+  // broken; it is actually the page in front of you being out of date.
+  //
+  // ⚠ This lives in the WORKER, not the page, on purpose: the page that needs to
+  // hear it is by definition the old one, which will never receive a fix we ship
+  // in the HTML. Deploying this to the OLD Worker is what makes a stale copy
+  // explain itself.
+  if (/exceeded d1|daily row read limit/i.test(raw)) {
+    return {
+      message: "This page is an out-of-date copy, so it is talking to the old server. "
+        + "Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to load the current one, then sign in again.",
+      outage: false, status: 500,
+    };
+  }
   if (!isOutage(raw)) return { message: raw, outage: false, status: 500 };
   const looksGitHub = /repo|branch|commit|blob|tree|store |GitHub|codeload/i.test(raw);
   const looksHeroku = /Heroku|app |build|source|dyno|slug/i.test(raw);
