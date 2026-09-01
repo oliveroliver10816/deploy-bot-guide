@@ -2106,3 +2106,40 @@ millisecond* — `2026-09-01T14:52:32.659Z`. No gap, nothing lost in the cutover
 
 ⚠️ **Stale old-Worker URLs still in the repo** (none of them served to a user, but they mislead):
 `setup.sh:18`, `panel/API.md:1`, `docs/index.html:215` — the last is the VA guide page.
+
+## v38 (2026-09-01) — 🛑 FOUND IT: the Refresh 500 was a CACHED PAGE calling the old Worker
+
+He reported it twice. My first pass could not reproduce it and I said so — that was true and useless.
+What I had missed: **a 500 at the auth step writes no audit row**, so "nothing has hit the old
+Worker since 14:52" was never evidence.
+
+**Proved by calling the old Worker directly** with a session minted in the old database:
+```
+GET  /api/state   → 500
+POST /api/refresh → 500  {"error":"D1_ERROR: Your account has exceeded D1's free tier
+                            daily row read limit …"}
+```
+That IS his "Internal server error", word for word from the browser's point of view. The old account
+is over its D1 daily row-read cap — the exact condition the whole move was made to escape.
+
+**The server is clean.** `ail.com.de/deploy`, `www.`, `http://`, `/index.html` — all four serve v37+
+naming only `gitku-b93f`, old Worker **0 times**. The stale copy is in HIS BROWSER.
+
+**Everything on the new Worker answers 200**, checked exhaustively: `/api/state`, `/api/repos`,
+`/api/logs`, `/api/diary`, `/api/me`; whole-fleet refresh; per-pairing refresh for all 8 pairings
+**serially AND all eight at once** (the button uses `Promise.all`); as **master and as va-cedar17**.
+
+### Two fixes, so this cannot happen again
+1. 🛑 **`.htaccess` now sends `Cache-Control: no-cache, must-revalidate` for `.html`/`.js`.** The
+   Worker URL is baked into the page at build time, so a browser holding an old copy keeps calling a
+   Worker we have moved away from — and it looks perfectly fine until something fails. `no-cache`
+   does not mean "do not store", it means "ask first": a re-upload is picked up on the next load and
+   costs a 304 when nothing changed. **This was the real defect — the page was cacheable.**
+2. ⭐ **The panel now translates that failure.** Any error mentioning the D1 row limit is rewritten
+   to *"This page is an out-of-date copy, so it is talking to the old server. Press Ctrl+Shift+R…"*
+   — the one failure a user cannot possibly diagnose from what the screen said.
+
+⚠️ Diagnosis needed signed-in requests: sessions were inserted directly into **both** databases and
+**both deleted afterwards** (`DELETE … WHERE token LIKE 'diag-%'`, verified 0 left in each).
+⚠️ Also corrected earlier in the day: the note calling the absent cron a fault. It was removed on
+purpose on 29 Aug at his instruction. **Do not re-add `triggers.crons`.**

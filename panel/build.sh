@@ -287,6 +287,19 @@ cat > "$STAGE/.htaccess" <<'EOF'
 </IfModule>
 Options -Indexes
 
+# 🛑 THE PANEL MUST REVALIDATE, ALWAYS. 2026-09-01: Gitku moved to a new
+# Cloudflare account, the Worker URL is baked into this page at build time, and
+# the new page was uploaded — but a browser holding the OLD copy kept calling the
+# OLD Worker, whose account was over its D1 daily row-read limit. What he saw was
+# "Internal server error" on Refresh, from a page that looked perfectly fine.
+# no-cache does NOT mean "do not store": it means "ask me first", so a re-upload
+# is picked up on the next load and costs a 304 when nothing changed.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
 # Compress the page. It is one self-contained file, so this is the single
 # biggest thing the host can do for how fast the panel opens: ~276 KB of
 # markup and script becomes ~76 KB on the wire.

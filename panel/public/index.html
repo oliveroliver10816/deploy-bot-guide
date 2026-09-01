@@ -2486,6 +2486,13 @@ async function api(path,opts={}){
     if(!msg)msg=res.status>=500
       ? 'The server had a problem ('+res.status+') — please try again in a moment.'
       : 'Something went wrong ('+res.status+')';
+    /* 🛑 2026-09-01 — the one failure a user cannot possibly diagnose: this PAGE
+       is an out-of-date copy held by the browser, so it is calling a Worker we
+       have moved away from. It looks perfectly normal until something fails, and
+       the failure reads as a server fault. Say what it actually is. */
+    if(/daily row read limit|exceeded d1|D1_ERROR/i.test(msg))
+      msg='This page is an out-of-date copy, so it is talking to the old server. '
+        +'Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to load the current one, then try again.';
     const err=new Error(msg);
     err.status=res.status;      /* v10: a rename clash (409) is answered, not just reported */
     /* v18: the server marks an outage-shaped failure. Ask the status pages once
