@@ -25,7 +25,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-API_BASE="https://deploy-bot.fleet-fefsba.workers.dev"
+API_BASE="https://deploy-bot.gitku-b93f.workers.dev"
 # Bob keeps every download. Each build gets its own numbered file so his
 # downloads folder stays readable and he can tell versions apart at a glance.
 VERSION="$(cat "$HERE/VERSION" 2>/dev/null || echo 1)"

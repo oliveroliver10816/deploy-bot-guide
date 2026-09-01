@@ -2,12 +2,12 @@
   "name": "deploy-bot",
   "main": "worker.js",
   "compatibility_date": "2026-07-01",
-  "account_id": "431aaf5f919ea44e107f6d7a91f5f362",
+  "account_id": "188816ea5543b276650d88d9811dce7d",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "deploy_bot_apac",
-      "database_id": "6ba157a6-44a3-4747-afcd-d9e6b861dc7a"
+      "database_id": "e06550f1-ae85-4c12-bc2b-7c93b7a58d0e"
     }
   ],
   "vars": {

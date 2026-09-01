@@ -15,7 +15,7 @@ fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CFG=/root/.config/deploy-bot/config.json
-WORKER_URL="https://deploy-bot.fleet-fefsba.workers.dev"
+WORKER_URL="https://deploy-bot.gitku-b93f.workers.dev"
 
 CLOUDFLARE_API_KEY=$(python3 -c "import json;print(json.load(open('/root/.config/cloudflare/osanix-fleetview.json'))['api_key'])")
 CLOUDFLARE_EMAIL=$(python3 -c "import json;print(json.load(open('/root/.config/cloudflare/osanix-fleetview.json'))['email'])")

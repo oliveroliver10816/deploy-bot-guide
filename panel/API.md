@@ -1,4 +1,4 @@
-# Panel API contract  (backend: Cloudflare Worker, base https://deploy-bot.fleet-fefsba.workers.dev)
+# Panel API contract  (backend: Cloudflare Worker, base https://deploy-bot.gitku-b93f.workers.dev)
 
 All endpoints under /api. JSON in, JSON out. Auth: `Authorization: Bearer <session>` except /api/login.
 CORS locked to https://ail.com.de. Preflight cached 24h (Access-Control-Max-Age: 86400).

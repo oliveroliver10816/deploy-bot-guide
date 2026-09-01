@@ -2039,3 +2039,70 @@ happened to touch proved nothing about the ones I did not.**
 **Tests:** 640 panel + 69 bot · every browser suite green — bounds 61 · buildall 33 · fetchbtn 8 ·
 filetools 32 · fmclicks 22 · foldall 16 · home 19 · neverdeployed 10 · onerepomanyapps 15 · paths 9 ·
 pickerbar 36 · repotree 15 · tags 30 · tagsimple 14.
+
+## ✅ 2026-09-01 — GITKU MOVED TO ITS OWN CLOUDFLARE ACCOUNT. LIVE.
+
+**Worker: https://deploy-bot.gitku-b93f.workers.dev** (old: `deploy-bot.fleet-fefsba.workers.dev`).
+Account #2 of the 5-way split — `Ingridkeydel@gmail.com`, acct `188816ea5543b276650d88d9811dce7d`,
+subdomain `gitku-b93f`. Token `/root/.config/cloudflare/fleet-02-gitku.json` (600).
+
+**Why:** D1's daily row-read limit is per ACCOUNT. On 2026-09-01 an unindexed FleetView query burned
+the shared free-tier budget and **Gitku went down with it** — `/api/login` answering
+`D1_ERROR: exceeded free tier daily row read limit`. One account per heavy tool now.
+
+**All three databases moved** (dumped via the D1 export API, restored via the D1 import API):
+`deploy_bot_apac` → `e06550f1-ae85-4c12-bc2b-7c93b7a58d0e` (live) · `deploy_bot_us`
+→ `6667db33-…` (rollback) · `deploy_bot` → `45b56716-…` (Telegram bot).
+**Verified after import: 53 apps · 13 repos · 16 connections · 4 panel logins · 7 tags.**
+Secrets re-set (`TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET` from `/root/.config/deploy-bot/config.json`).
+Live checks: `/api/login` with a wrong password returns **401 "Wrong username or password."** — a
+real D1 read, not a 500 — and CORS returns `access-control-allow-origin: https://ail.com.de`.
+
+🛑 **BOB MUST UPLOAD ONE FILE: `panel/dist/deploy/index.html` (v37, 504 KB) to ail.com.de/deploy**,
+overwriting the current one. The Worker URL is baked into the page at build time (`API_BASE` in
+`panel/build.sh`, now `https://deploy-bot.gitku-b93f.workers.dev`) and the old URL appears **0 times**
+in the built file. Nothing else in the folder changes. Until he uploads it, the live panel still
+calls the OLD Worker on the capped account.
+
+⚠️ **`panel/build.sh` line 28 `API_BASE` is the single source of the Worker URL** — change it there,
+never in the built HTML.
+⚠️ **CORRECTION (2026-09-01, later): the missing cron is NOT a fault — it was REMOVED ON PURPOSE on
+2026-08-29 at his explicit instruction** (*"lets not do auto-update … otherwise we're just exceeding
+requests when we're not even working"*). See v33. Discovery is manual: **Refresh from Heroku**, or
+**Fetch apps** on one account. 🛑 **Do not re-add `triggers.crons`.** The original note follows.
+⚠️ **FINDING: the deploy-bot Worker has NO CRON TRIGGER.** `GET /workers/scripts/deploy-bot/schedules`
+on the old account returned `{"schedules": []}`, and `wrangler.json` has no `triggers` block —
+yet `worker.js` has a `scheduled()` handler and this file has claimed since v-whatever that "apps
+appear by themselves every ~2 minutes (cron `*/2`)". **That auto-discovery has not been running.**
+Not fixed here (out of scope for the move) — needs a `triggers.crons` entry and a redeploy.
+🛑 The old Worker and its 3 databases were **NOT deleted** (standing order). They are now a diverging
+copy; say the word to stop the old one.
+
+## 2026-09-01 (evening) — the Refresh 500, chased down. Nothing is wrong now.
+
+He reported *"the REFRESH button shows Internal server error"* right after the account move, and
+asked me to check every link pointed at the new Worker.
+
+**Links: correct, verified from outside.** The live page at `ail.com.de/deploy` is v37, names
+`deploy-bot.gitku-b93f.workers.dev` and contains the old Worker **0 times**.
+
+**Every path exercised against the LIVE new Worker and all returned 200** — `/api/state`,
+`/api/repos`, `/api/logs`, `/api/diary`, `/api/me`, the whole-fleet `POST /api/refresh` (53 apps, 13
+repos, `errors: []`), and the per-pairing `POST /api/refresh {combo_id}` that the button actually
+uses, **for all 8 pairings**. Schema checked too: every column `refreshCombos` writes exists.
+⚠️ To do this I inserted a 20-minute session row for `adm-lumen67` directly in D1, used it, and
+**deleted it** — verified `0` leftover `diag-%` sessions. Nothing else was written.
+
+**What it almost certainly was:** the Worker was deployed **three times inside ten seconds** at
+17:40:52 / 17:40:55 / 17:41:01 during the move. A request landing mid-deploy is exactly this error.
+**His own work from 17:47 onwards all succeeded** — file changes, five rebuilds, a build — and the
+audit log holds **no failed rows at all**.
+🛑 It was NOT a stale page pointing at the old Worker: the OLD database's last row is
+`14:52:32.659Z` (the VA, before the move) and **nothing has hit it since**.
+
+⭐ **The migration is provably complete, checked by content rather than counts:** the newest row on
+the old database and the newest pre-move row on the new one are the *same timestamp to the
+millisecond* — `2026-09-01T14:52:32.659Z`. No gap, nothing lost in the cutover.
+
+⚠️ **Stale old-Worker URLs still in the repo** (none of them served to a user, but they mislead):
+`setup.sh:18`, `panel/API.md:1`, `docs/index.html:215` — the last is the VA guide page.
