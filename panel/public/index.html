@@ -2324,10 +2324,17 @@ function ago(t){
      few weeks old. It now renders Heroku's and GitHub's own dates, which go
      back years — and without a year "2 Jan 2020" and "2 Jan 2026" printed
      the SAME STRING while sorting six years apart. */
+  /* ⚠ IST, not the reader's machine. Every other date on this panel is India
+     time (the activity log says so in its own header, and the day book groups
+     on it), so a date column that quietly followed the browser's zone could
+     print a different day to the VA than to him for the same row. */
+  const IST={timeZone:'Asia/Kolkata'};
   const d=new Date(ms), now=new Date();
-  return d.toLocaleDateString(undefined,d.getFullYear()===now.getFullYear()
-    ?{month:'short',day:'numeric'}
-    :{month:'short',day:'numeric',year:'numeric'});
+  const yr=Number(new Intl.DateTimeFormat('en-CA',{...IST,year:'numeric'}).format(now));
+  const dy=Number(new Intl.DateTimeFormat('en-CA',{...IST,year:'numeric'}).format(d));
+  return d.toLocaleDateString('en-IN',dy===yr
+    ?{...IST,month:'short',day:'numeric'}
+    :{...IST,month:'short',day:'numeric',year:'numeric'});
 }
 function toast(msg,kind){
   const t=document.createElement('div');

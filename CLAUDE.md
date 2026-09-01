@@ -2143,3 +2143,12 @@ naming only `gitku-b93f`, old Worker **0 times**. The stale copy is in HIS BROWS
 **both deleted afterwards** (`DELETE … WHERE token LIKE 'diag-%'`, verified 0 left in each).
 ⚠️ Also corrected earlier in the day: the note calling the absent cron a fault. It was removed on
 purpose on 29 Aug at his instruction. **Do not re-add `triggers.crons`.**
+
+## v40 (2026-09-01) — every date on the panel is IST, including the ones that were not
+
+He asked for Gitku on IST. Most of it already was: the activity log renders `Asia/Kolkata` and says
+so in its header, and the day book groups days on `+5:30` in the Worker. **`ago()` did not** — the
+"Created on" and "Last updated" columns on Apps, Repos and the File Manager called
+`toLocaleDateString(undefined, …)`, which is the READER'S machine. A VA in another zone and Bob
+could see different days on the same row, and the year check compared a local year with an IST date.
+Pinned to `Asia/Kolkata`, year comparison included.
